@@ -205,8 +205,9 @@ async function boot() {
 
 $("#loginForm").addEventListener("submit", async (event) => {
   event.preventDefault();
+  const loginForm = event.currentTarget;
   $("#loginError").textContent = "";
-  const form = new FormData(event.currentTarget);
+  const form = new FormData(loginForm);
   try {
     const payload = await api("/api/login", {
       method: "POST",
@@ -216,7 +217,7 @@ $("#loginForm").addEventListener("submit", async (event) => {
       }),
     });
     state.user = payload.user;
-    event.currentTarget.reset();
+    loginForm.reset();
     showApp();
     await refreshAll();
     state.poller = setInterval(refreshAll, 2500);
@@ -233,8 +234,9 @@ $("#logoutButton").addEventListener("click", async () => {
 
 $("#downloadForm").addEventListener("submit", async (event) => {
   event.preventDefault();
+  const downloadForm = event.currentTarget;
   $("#downloadError").textContent = "";
-  const form = new FormData(event.currentTarget);
+  const form = new FormData(downloadForm);
   try {
     await api("/api/downloads", {
       method: "POST",
@@ -244,7 +246,7 @@ $("#downloadForm").addEventListener("submit", async (event) => {
         playlist: form.get("playlist") === "on",
       }),
     });
-    event.currentTarget.reset();
+    downloadForm.reset();
     await loadDownloads();
   } catch (error) {
     $("#downloadError").textContent = error.message;
@@ -275,8 +277,9 @@ $("#refreshFilesButton").addEventListener("click", loadFiles);
 
 $("#userForm").addEventListener("submit", async (event) => {
   event.preventDefault();
+  const userForm = event.currentTarget;
   $("#userError").textContent = "";
-  const form = new FormData(event.currentTarget);
+  const form = new FormData(userForm);
   try {
     await api("/api/admin/users", {
       method: "POST",
@@ -286,7 +289,7 @@ $("#userForm").addEventListener("submit", async (event) => {
         is_admin: form.get("is_admin") === "on",
       }),
     });
-    event.currentTarget.reset();
+    userForm.reset();
     await loadUsers();
   } catch (error) {
     $("#userError").textContent = error.message;
