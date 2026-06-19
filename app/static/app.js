@@ -8,6 +8,18 @@ const state = {
 
 const $ = (selector) => document.querySelector(selector);
 
+async function loadVersion() {
+  const target = $("#versionBadge");
+  if (!target) return;
+  try {
+    const payload = await api("/api/health");
+    const shortSha = payload.build_sha ? payload.build_sha.slice(0, 7) : "dev";
+    target.textContent = `v${payload.version || "0.1.0"} · ${shortSha}`;
+  } catch {
+    target.textContent = "Version unbekannt";
+  }
+}
+
 function escapeHtml(value) {
   return String(value ?? "")
     .replaceAll("&", "&amp;")
@@ -192,6 +204,7 @@ function renderUsers() {
 }
 
 async function boot() {
+  await loadVersion();
   try {
     const payload = await api("/api/me");
     state.user = payload.user;

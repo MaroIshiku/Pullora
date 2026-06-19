@@ -28,6 +28,8 @@ DOWNLOAD_DIR = Path(os.getenv("DOWNLOAD_DIR", "./downloads")).resolve()
 DB_PATH = DATA_DIR / "app.db"
 SESSION_DAYS = int(os.getenv("SESSION_DAYS", "14"))
 COOKIE_SECURE = os.getenv("APP_COOKIE_SECURE", "false").lower() == "true"
+APP_VERSION = os.getenv("APP_VERSION", "0.1.0")
+APP_BUILD_SHA = os.getenv("APP_BUILD_SHA", "dev")
 
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
@@ -431,7 +433,11 @@ def index() -> FileResponse:
 
 @app.get("/api/health")
 def health() -> dict[str, str]:
-    return {"status": "ok"}
+    return {
+        "status": "ok",
+        "version": APP_VERSION,
+        "build_sha": APP_BUILD_SHA,
+    }
 
 
 @app.post("/api/login")
