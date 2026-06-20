@@ -14,7 +14,8 @@ Diese App wurde von KI erstellt. Feature-Requests werden mit hoher Wahrscheinlic
 - Download-Queue fuer Video, MP4, MP3 und M4A
 - optionaler Playlist-Download
 - Live-Status mit Fortschritt, Geschwindigkeit und ETA
-- geschuetzte Dateiliste mit Download-Links
+- benutzergetrennte Download-Historie: Benutzer sehen nur ihre eigenen Queue-Eintraege
+- Download-Button direkt an abgeschlossenen Queue-Eintraegen
 - System-Footer mit App-Version, Build-Commit, Build-Datum und yt-dlp-Version
 - persistente SQLite-Datenbank in `data/` innerhalb von `/media/ZimaOS-HD/AppData/ish_ytdlp`
 - Downloads in `downloads/` innerhalb von `/media/ZimaOS-HD/AppData/ish_ytdlp`

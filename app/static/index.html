@@ -72,30 +72,20 @@
           <div id="downloadList" class="download-list"></div>
         </section>
 
-        <aside class="side-column">
-          <section class="panel">
-            <div class="section-head">
-              <h2>Dateien</h2>
-              <button id="refreshFilesButton" class="ghost" type="button">Neu laden</button>
-            </div>
-            <div id="fileList" class="file-list"></div>
-          </section>
-
-          <section id="adminPanel" class="panel" hidden>
-            <h2>Benutzer</h2>
-            <form id="userForm" class="stack compact-form">
-              <input name="username" placeholder="Benutzername" required minlength="3" />
-              <input name="password" type="password" placeholder="Passwort" required minlength="10" />
-              <label class="checkbox-row">
-                <input name="is_admin" type="checkbox" />
-                Admin
-              </label>
-              <button class="primary" type="submit">Erstellen</button>
-              <p id="userError" class="error" role="alert"></p>
-            </form>
-            <div id="userList" class="user-list"></div>
-          </section>
-        </aside>
+        <section id="adminPanel" class="panel admin-panel" hidden>
+          <h2>Benutzer</h2>
+          <form id="userForm" class="stack compact-form">
+            <input name="username" placeholder="Benutzername" required minlength="3" />
+            <input name="password" type="password" placeholder="Passwort" required minlength="10" />
+            <label class="checkbox-row">
+              <input name="is_admin" type="checkbox" />
+              Admin
+            </label>
+            <button class="primary" type="submit">Erstellen</button>
+            <p id="userError" class="error" role="alert"></p>
+          </form>
+          <div id="userList" class="user-list"></div>
+        </section>
       </section>
     </main>
 
@@ -103,6 +93,6 @@
       <span data-version>System wird geladen</span>
     </footer>
 
-    <script src="/static/app.js?v=20260620-5"></script>
+    <script src="/static/app.js?v=20260620-6"></script>
   </body>
 </html>

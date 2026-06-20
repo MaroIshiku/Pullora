@@ -240,6 +240,7 @@ def parse_progress(line: str) -> tuple[float | None, str | None, str | None]:
 
 
 def row_to_download(row: sqlite3.Row) -> dict[str, Any]:
+    file_url = f"/api/downloads/{row['id']}/file" if row["status"] == "completed" and row["filename"] else None
     return {
         "id": row["id"],
         "url": row["url"],
@@ -251,6 +252,7 @@ def row_to_download(row: sqlite3.Row) -> dict[str, Any]:
         "speed": row["speed"],
         "eta": row["eta"],
         "filename": row["filename"],
+        "file_url": file_url,
         "error": row["error"],
         "created_by": row["created_by"],
         "created_at": row["created_at"],
@@ -316,6 +318,7 @@ def run_download(row: sqlite3.Row) -> None:
     title = probe_title(url, playlist)
     if title:
         update_download(download_id, title=title)
+    started_at = time.time()
 
     command = [
         "yt-dlp",
@@ -374,14 +377,15 @@ def run_download(row: sqlite3.Row) -> None:
             return
 
         if return_code == 0:
-            newest = newest_download_file()
+            newest = newest_download_file(started_at)
+            relative_filename = newest.relative_to(DOWNLOAD_DIR).as_posix() if newest else None
             update_download(
                 download_id,
                 status="completed",
                 progress=100,
                 eta=None,
                 speed=None,
-                filename=newest.name if newest else None,
+                filename=relative_filename,
                 error=None,
             )
         else:
@@ -398,8 +402,12 @@ def run_download(row: sqlite3.Row) -> None:
             active_process = None
 
 
-def newest_download_file() -> Path | None:
-    files = [path for path in DOWNLOAD_DIR.rglob("*") if path.is_file() and not path.name.endswith(".part")]
+def newest_download_file(since: float = 0) -> Path | None:
+    files = [
+        path
+        for path in DOWNLOAD_DIR.rglob("*")
+        if path.is_file() and not path.name.endswith(".part") and path.stat().st_mtime >= since
+    ]
     if not files:
         return None
     return max(files, key=lambda path: path.stat().st_mtime)
@@ -514,9 +522,12 @@ def me(user: dict[str, Any] = Depends(get_current_user)) -> dict[str, Any]:
 
 
 @app.get("/api/downloads")
-def downloads(_: dict[str, Any] = Depends(get_current_user)) -> dict[str, Any]:
+def downloads(user: dict[str, Any] = Depends(get_current_user)) -> dict[str, Any]:
     with connect() as conn:
-        rows = conn.execute("SELECT * FROM downloads ORDER BY id DESC LIMIT 200").fetchall()
+        rows = conn.execute(
+            "SELECT * FROM downloads WHERE created_by = ? ORDER BY id DESC LIMIT 200",
+            (user["id"],),
+        ).fetchall()
         return {"downloads": [row_to_download(row) for row in rows]}
 
 
@@ -542,9 +553,12 @@ def create_download(
 
 
 @app.post("/api/downloads/{download_id}/cancel")
-def cancel_download(download_id: int, _: dict[str, Any] = Depends(get_current_user)) -> dict[str, str]:
+def cancel_download(download_id: int, user: dict[str, Any] = Depends(get_current_user)) -> dict[str, str]:
     with connect() as conn:
-        row = conn.execute("SELECT * FROM downloads WHERE id = ?", (download_id,)).fetchone()
+        row = conn.execute(
+            "SELECT * FROM downloads WHERE id = ? AND created_by = ?",
+            (download_id, user["id"]),
+        ).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Download not found")
         if row["status"] in {"completed", "failed", "cancelled"}:
@@ -561,9 +575,12 @@ def cancel_download(download_id: int, _: dict[str, Any] = Depends(get_current_us
 
 
 @app.delete("/api/downloads/{download_id}")
-def delete_download(download_id: int, _: dict[str, Any] = Depends(require_admin)) -> dict[str, str]:
+def delete_download(download_id: int, user: dict[str, Any] = Depends(get_current_user)) -> dict[str, str]:
     with connect() as conn:
-        row = conn.execute("SELECT status FROM downloads WHERE id = ?", (download_id,)).fetchone()
+        row = conn.execute(
+            "SELECT status FROM downloads WHERE id = ? AND created_by = ?",
+            (download_id, user["id"]),
+        ).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Download not found")
         if row["status"] == "running":
@@ -573,30 +590,58 @@ def delete_download(download_id: int, _: dict[str, Any] = Depends(require_admin)
 
 
 @app.get("/api/files")
-def files(_: dict[str, Any] = Depends(get_current_user)) -> dict[str, Any]:
+def files(user: dict[str, Any] = Depends(get_current_user)) -> dict[str, Any]:
     items = []
-    for path in sorted(DOWNLOAD_DIR.rglob("*"), key=lambda item: item.stat().st_mtime, reverse=True):
-        if not path.is_file() or path.name.endswith(".part"):
+    download_root = DOWNLOAD_DIR.resolve()
+    with connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT id, filename, updated_at
+            FROM downloads
+            WHERE created_by = ? AND status = 'completed' AND filename IS NOT NULL
+            ORDER BY updated_at DESC
+            LIMIT 200
+            """,
+            (user["id"],),
+        ).fetchall()
+    for row in rows:
+        target = (download_root / row["filename"]).resolve()
+        try:
+            target.relative_to(download_root)
+        except ValueError:
             continue
-        relative = path.relative_to(DOWNLOAD_DIR).as_posix()
-        stat = path.stat()
-        items.append(
-            {
-                "name": path.name,
-                "path": relative,
-                "size": stat.st_size,
-                "modified_at": datetime.fromtimestamp(stat.st_mtime, timezone.utc).isoformat(),
-                "url": f"/files/{relative}",
-            }
-        )
+        if target.is_file():
+            stat = target.stat()
+            items.append(
+                {
+                    "name": target.name,
+                    "path": row["filename"],
+                    "size": stat.st_size,
+                    "modified_at": datetime.fromtimestamp(stat.st_mtime, timezone.utc).isoformat(),
+                    "url": f"/api/downloads/{row['id']}/file",
+                }
+            )
     return {"files": items[:200]}
 
 
-@app.get("/files/{file_path:path}")
-def serve_file(file_path: str, _: dict[str, Any] = Depends(get_current_user)) -> FileResponse:
-    target = (DOWNLOAD_DIR / file_path).resolve()
+@app.get("/api/downloads/{download_id}/file")
+def download_file(download_id: int, user: dict[str, Any] = Depends(get_current_user)) -> FileResponse:
+    download_root = DOWNLOAD_DIR.resolve()
+    with connect() as conn:
+        row = conn.execute(
+            """
+            SELECT filename
+            FROM downloads
+            WHERE id = ? AND created_by = ? AND status = 'completed' AND filename IS NOT NULL
+            """,
+            (download_id, user["id"]),
+        ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    target = (download_root / row["filename"]).resolve()
     try:
-        target.relative_to(DOWNLOAD_DIR)
+        target.relative_to(download_root)
     except ValueError:
         raise HTTPException(status_code=404, detail="File not found") from None
     if not target.is_file():

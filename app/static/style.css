@@ -137,8 +137,8 @@ h2 {
 }
 
 .app-shell {
-  min-height: 100vh;
-  padding: 28px;
+  min-height: calc(100vh - 44px);
+  padding: 22px;
 }
 
 .topbar {
@@ -146,7 +146,7 @@ h2 {
   align-items: center;
   justify-content: space-between;
   gap: 18px;
-  margin: 0 auto 24px;
+  margin: 0 auto 18px;
   max-width: 1480px;
 }
 
@@ -169,14 +169,13 @@ h2 {
   max-width: 1480px;
   margin: 0 auto;
   display: grid;
-  grid-template-columns: minmax(240px, 330px) minmax(360px, 1fr) minmax(280px, 360px);
+  grid-template-columns: minmax(240px, 320px) minmax(420px, 1fr);
   gap: 18px;
   align-items: start;
 }
 
-.side-column {
-  display: grid;
-  gap: 18px;
+.workspace.has-admin {
+  grid-template-columns: minmax(240px, 320px) minmax(420px, 1fr) minmax(280px, 360px);
 }
 
 .panel {
@@ -244,14 +243,12 @@ h2 {
 }
 
 .download-list,
-.file-list,
 .user-list {
   display: grid;
   gap: 10px;
 }
 
 .download-card,
-.file-row,
 .user-row {
   background: var(--panel-2);
   border: 1px solid var(--line);
@@ -268,7 +265,6 @@ h2 {
 }
 
 .download-title,
-.file-name,
 .user-name {
   overflow-wrap: anywhere;
   font-weight: 750;
@@ -331,9 +327,31 @@ h2 {
 }
 
 .card-actions button,
+.card-actions a,
 .user-actions button {
   min-height: 34px;
   font-size: 0.86rem;
+}
+
+.icon-button {
+  width: 36px;
+  height: 34px;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid rgba(43, 179, 163, 0.55);
+  border-radius: 8px;
+  color: var(--accent-strong);
+  text-decoration: none;
+}
+
+.icon-button svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .empty-state {
@@ -343,11 +361,6 @@ h2 {
   border: 1px dashed var(--line);
   border-radius: 8px;
   color: var(--muted);
-}
-
-.file-row a {
-  color: var(--accent-strong);
-  text-decoration: none;
 }
 
 .compact-form {
@@ -373,14 +386,33 @@ h2 {
   padding: 6px 14px;
 }
 
-@media (max-width: 1180px) {
+@media (min-width: 1181px) {
+  .app-shell {
+    height: calc(100vh - 44px);
+    overflow: hidden;
+  }
+
   .workspace {
+    height: calc(100vh - 150px);
+    min-height: 0;
+  }
+
+  .submit-panel,
+  .queue-panel,
+  .admin-panel {
+    max-height: 100%;
+    overflow: auto;
+  }
+}
+
+@media (max-width: 1180px) {
+  .workspace,
+  .workspace.has-admin {
     grid-template-columns: 310px 1fr;
   }
 
-  .side-column {
+  .admin-panel {
     grid-column: 1 / -1;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
@@ -391,7 +423,7 @@ h2 {
 
   .topbar,
   .workspace,
-  .side-column {
+  .workspace.has-admin {
     grid-template-columns: 1fr;
   }
 

@@ -1,7 +1,6 @@
 const state = {
   user: null,
   downloads: [],
-  files: [],
   users: [],
   poller: null,
 };
@@ -37,18 +36,6 @@ function escapeHtml(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
-}
-
-function formatBytes(bytes) {
-  if (!bytes) return "0 B";
-  const units = ["B", "KB", "MB", "GB", "TB"];
-  let size = bytes;
-  let index = 0;
-  while (size >= 1024 && index < units.length - 1) {
-    size /= 1024;
-    index += 1;
-  }
-  return `${size.toFixed(index ? 1 : 0)} ${units[index]}`;
 }
 
 function formatDate(value) {
@@ -91,6 +78,7 @@ function showLogin() {
 function showApp() {
   $("#loginView").hidden = true;
   $("#appView").hidden = false;
+  $(".workspace")?.classList.toggle("has-admin", Boolean(state.user?.is_admin));
   $("#currentUser").textContent = state.user?.is_admin
     ? `${state.user.username} · Admin`
     : state.user?.username;
@@ -99,19 +87,13 @@ function showApp() {
 
 async function refreshAll() {
   if (!state.user) return;
-  await Promise.all([loadDownloads(), loadFiles(), state.user.is_admin ? loadUsers() : Promise.resolve()]);
+  await Promise.all([loadDownloads(), state.user.is_admin ? loadUsers() : Promise.resolve()]);
 }
 
 async function loadDownloads() {
   const payload = await api("/api/downloads");
   state.downloads = payload.downloads;
   renderDownloads();
-}
-
-async function loadFiles() {
-  const payload = await api("/api/files");
-  state.files = payload.files;
-  renderFiles();
 }
 
 async function loadUsers() {
@@ -131,7 +113,7 @@ function renderDownloads() {
     .map((item) => {
       const title = item.title || item.url;
       const canCancel = ["queued", "running"].includes(item.status);
-      const canDelete = state.user?.is_admin && item.status !== "running";
+      const canDelete = item.status !== "running";
       const progress = Math.max(0, Math.min(100, item.progress || 0));
       const detail = [item.mode, item.speed, item.eta ? `ETA ${item.eta}` : null]
         .filter(Boolean)
@@ -150,6 +132,17 @@ function renderDownloads() {
           ${item.error ? `<div class="meta">${escapeHtml(item.error)}</div>` : ""}
           <div class="card-actions">
             ${
+              item.file_url
+                ? `<a class="icon-button" href="${escapeHtml(item.file_url)}" title="Datei herunterladen" aria-label="Datei herunterladen">
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M12 3v11"></path>
+                      <path d="m7 9 5 5 5-5"></path>
+                      <path d="M5 20h14"></path>
+                    </svg>
+                  </a>`
+                : ""
+            }
+            ${
               canCancel
                 ? `<button class="ghost danger" type="button" data-action="cancel" data-id="${item.id}">Stoppen</button>`
                 : ""
@@ -163,27 +156,6 @@ function renderDownloads() {
         </article>
       `;
     })
-    .join("");
-}
-
-function renderFiles() {
-  const target = $("#fileList");
-  if (!state.files.length) {
-    target.innerHTML = '<div class="empty-state">Keine Dateien</div>';
-    return;
-  }
-
-  target.innerHTML = state.files
-    .map(
-      (file) => `
-        <div class="file-row">
-          <div class="row-top">
-            <a class="file-name" href="${escapeHtml(file.url)}">${escapeHtml(file.name)}</a>
-          </div>
-          <div class="meta">${formatBytes(file.size)} · ${escapeHtml(formatDate(file.modified_at))}</div>
-        </div>
-      `,
-    )
     .join("");
 }
 
@@ -296,7 +268,6 @@ $("#downloadList").addEventListener("click", async (event) => {
 });
 
 $("#refreshButton").addEventListener("click", loadDownloads);
-$("#refreshFilesButton").addEventListener("click", loadFiles);
 
 $("#userForm").addEventListener("submit", async (event) => {
   event.preventDefault();
