@@ -11,4 +11,5 @@ secrets/*.txt
 !secrets/.gitkeep
 .testdata/
 .testdownloads/
+.docker-local/
 .tools/
