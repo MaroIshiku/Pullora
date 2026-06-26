@@ -1,4 +1,4 @@
-# YTDLP Client
+# Pullora
 
 Self-hosted `yt-dlp` WebUI built for Docker and ZimaOS.
 
@@ -8,34 +8,39 @@ This app was created with AI assistance. Feature requests are unlikely to be han
 
 ## Features
 
-- Login page with session cookie authentication
+- Pullora-branded login and dashboard UI
+- Pixel Soft Utility theme system with Lavender, Mint, Sky, Amber, and Graphite
+- System, Light, and Dark appearance modes
+- login page with session cookie authentication
 - first user is created as admin from a Docker secret on first start
 - admins can create users, reset passwords, and delete users
 - user-scoped download history: users only see their own queue entries
-- download queue for auto, video, audio, captions, and thumbnails
+- inline download options inside the New Download card
+- download queue for video and audio
 - video options for container, codec, and maximum resolution
 - audio options for format and bitrate
-- caption options for language and output format
 - optional playlist downloads
 - live status with progress, speed, and ETA
 - file size and download button directly on completed queue entries
-- system footer with app version, build commit, build date, public IP, and yt-dlp version
-- persistent SQLite database in `data/` inside `/media/ZimaOS-HD/AppData/ish_ytdlp`
-- downloads in `downloads/` inside `/media/ZimaOS-HD/AppData/ish_ytdlp`
+- About/Admin sheet with app version, build commit, build date, public IP, and yt-dlp diagnostics
+- persistent SQLite database in `data/` inside `/media/ZimaOS-HD/AppData/pullora`
+- downloads in `downloads/` inside `/media/ZimaOS-HD/AppData/pullora`
 
 ## Start on ZimaOS / Docker
 
-Important: the ZimaOS/CasaOS app UI often cannot run local Docker builds. In that case the imported YAML must not contain `build:` and must point to an already published image, for example `ghcr.io/maroishiku/ish-ytdlp:latest`.
+Important: the ZimaOS/CasaOS app UI often cannot run local Docker builds. In that case the imported YAML must not contain `build:` and must point to an already published image, for example `ghcr.io/maroishiku/pullora:latest`.
 
-There are two supported paths:
+There are two supported Compose files:
 
-- ZimaOS terminal: use `docker-compose.yml` and build locally.
-- ZimaOS UI: use `docker-compose.zimaos-ui.yml` after the image has been built and pushed by GitHub Actions.
+- `docker-compose.yml`: standard Docker Compose with a Docker secret.
+- `docker-compose.zimaos-ui.yml`: ZimaOS/CasaOS-friendly import file with a direct bind mount for the secret file.
+
+Both files use the published image `ghcr.io/maroishiku/pullora:latest`. The image is built by GitHub Actions after pushing to GitHub.
 
 1. Place the project on ZimaOS:
 
    ```text
-   /media/ZimaOS-HD/AppData/ish_ytdlp
+   /media/ZimaOS-HD/AppData/pullora
    ```
 
 2. Configure the password secret:
@@ -43,9 +48,9 @@ There are two supported paths:
    If the folders do not exist yet:
 
    ```bash
-   mkdir -p /media/ZimaOS-HD/AppData/ish_ytdlp/data
-   mkdir -p /media/ZimaOS-HD/AppData/ish_ytdlp/downloads
-   mkdir -p /media/ZimaOS-HD/AppData/ish_ytdlp/secrets
+   mkdir -p /media/ZimaOS-HD/AppData/pullora/data
+   mkdir -p /media/ZimaOS-HD/AppData/pullora/downloads
+   mkdir -p /media/ZimaOS-HD/AppData/pullora/secrets
    ```
 
    On Windows:
@@ -63,20 +68,20 @@ There are two supported paths:
    On ZimaOS/Linux:
 
    ```bash
-   printf '%s\n' 'a-long-initial-admin-password' > /media/ZimaOS-HD/AppData/ish_ytdlp/secrets/admin_password.txt
+   printf '%s\n' 'a-long-initial-admin-password' > /media/ZimaOS-HD/AppData/pullora/secrets/admin_password.txt
    ```
 
 3. Start the container from a terminal:
 
    ```bash
-   cd /media/ZimaOS-HD/AppData/ish_ytdlp
-   docker compose up -d --build
+   cd /media/ZimaOS-HD/AppData/pullora
+   docker compose up -d
    ```
 
-   If you use the ZimaOS UI instead, the image must already have been built by GitHub Actions:
+   If you use the ZimaOS UI instead, import `docker-compose.zimaos-ui.yml`. The image must already have been built by GitHub Actions:
 
    ```yaml
-   image: ghcr.io/maroishiku/ish-ytdlp:latest
+   image: ghcr.io/maroishiku/pullora:latest
    ```
 
 4. Open the WebUI:
@@ -92,31 +97,30 @@ There are two supported paths:
    Password: contents of secrets/admin_password.txt
    ```
 
-After the first start, the admin user is stored in SQLite. Changing the secret file later does not change existing passwords automatically; use the admin area for that.
+After the first start, the admin user is stored in SQLite. Changing the secret file later does not change existing passwords automatically; use the admin sheet for that.
 
 ## Docker Compose
 
-The relevant terminal-build section in [docker-compose.yml](docker-compose.yml) is:
+The relevant section in [docker-compose.yml](docker-compose.yml) is:
 
 ```yaml
-build:
-  context: /media/ZimaOS-HD/AppData/ish_ytdlp
+image: ghcr.io/maroishiku/pullora:latest
 environment:
   FIRST_ADMIN_USERNAME: admin
   FIRST_ADMIN_PASSWORD_FILE: /run/secrets/first_admin_password
 volumes:
-  - /media/ZimaOS-HD/AppData/ish_ytdlp/data:/data
-  - /media/ZimaOS-HD/AppData/ish_ytdlp/downloads:/downloads
+  - /media/ZimaOS-HD/AppData/pullora/data:/data
+  - /media/ZimaOS-HD/AppData/pullora/downloads:/downloads
 secrets:
   first_admin_password:
-    file: /media/ZimaOS-HD/AppData/ish_ytdlp/secrets/admin_password.txt
+    file: /media/ZimaOS-HD/AppData/pullora/secrets/admin_password.txt
 ports:
   - "8180:8080"
 ```
 
-The Compose file intentionally uses absolute paths to `/media/ZimaOS-HD/AppData/ish_ytdlp`. This keeps it unambiguous when ZimaOS/CasaOS imports the YAML or starts it from another working directory.
+The Compose file intentionally uses absolute paths to `/media/ZimaOS-HD/AppData/pullora`. This keeps it unambiguous when ZimaOS/CasaOS imports the YAML or starts it from another working directory.
 
-For the ZimaOS UI, use [docker-compose.zimaos-ui.yml](docker-compose.zimaos-ui.yml). It does not contain `build:` and uses `image:` only. Without a registry image, the ZimaOS UI cannot start the container.
+For the ZimaOS UI, use [docker-compose.zimaos-ui.yml](docker-compose.zimaos-ui.yml). It does not contain a local build step and uses `image:` only. Without a registry image, the ZimaOS UI cannot start the container.
 
 ## Build the Image for the ZimaOS UI
 
@@ -127,13 +131,13 @@ This project contains a workflow at `.github/workflows/publish-ghcr.yml`. Every 
 The image name is:
 
 ```text
-ghcr.io/maroishiku/ish-ytdlp:latest
+ghcr.io/maroishiku/pullora:latest
 ```
 
 Use this value in [docker-compose.zimaos-ui.yml](docker-compose.zimaos-ui.yml):
 
 ```yaml
-image: ghcr.io/maroishiku/ish-ytdlp:latest
+image: ghcr.io/maroishiku/pullora:latest
 ```
 
 If the GHCR package is private, ZimaOS cannot pull it without a registry login. The easiest path is to make the package public in GitHub or log Docker in to `ghcr.io` on ZimaOS.
@@ -156,9 +160,9 @@ This improves compatibility significantly, but it does not guarantee that every 
 
 ```bash
 cd /path/to/project
-docker build -t ghcr.io/maroishiku/ish-ytdlp:latest .
+docker build -t ghcr.io/maroishiku/pullora:latest .
 docker login ghcr.io
-docker push ghcr.io/maroishiku/ish-ytdlp:latest
+docker push ghcr.io/maroishiku/pullora:latest
 ```
 
 Then import `docker-compose.zimaos-ui.yml` in ZimaOS and keep `image:` set to exactly that name.

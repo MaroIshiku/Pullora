@@ -39,7 +39,7 @@ APP_BUILD_DATE = os.getenv("APP_BUILD_DATE", "unknown")
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
-app = FastAPI(title="YTDLP Client")
+app = FastAPI(title="Pullora")
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 stop_worker = threading.Event()

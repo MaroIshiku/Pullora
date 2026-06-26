@@ -2,10 +2,15 @@ const state = {
   user: null,
   downloads: [],
   users: [],
+  systemInfo: null,
   poller: null,
 };
 
-const $ = (selector) => document.querySelector(selector);
+const THEME_KEY = "pullora-theme";
+const MODE_KEY = "pullora-mode";
+const LEGACY_THEME_KEY = "ytdlp-client-theme";
+const LEGACY_MODE_KEY = "ytdlp-client-mode";
+const systemScheme = window.matchMedia("(prefers-color-scheme: dark)");
 
 const compatibleVideoCodecs = {
   auto: ["auto", "h264", "h265", "av1", "vp9"],
@@ -14,27 +19,37 @@ const compatibleVideoCodecs = {
   mkv: ["auto", "h264", "h265", "av1", "vp9"],
 };
 
-async function loadVersion() {
-  const targets = document.querySelectorAll("[data-version]");
-  if (!targets.length) return;
-  try {
-    const payload = await api("/api/health");
-    const shortSha = payload.build_sha ? payload.build_sha.slice(0, 7) : "dev";
-    const buildDate = payload.build_date && payload.build_date !== "unknown"
-      ? payload.build_date.slice(0, 10)
-      : "unknown";
-    const impersonation = payload.curl_cffi_available ? "impersonation ok" : "impersonation missing";
-    const deno = payload.deno_version && payload.deno_version !== "unavailable" ? "deno ok" : "deno missing";
-    const publicIp = payload.public_ip || "unavailable";
-    const label = `yt-dlp ${payload.yt_dlp_version || "unknown"} | YTDLP Client ${payload.version || "0.1.0"} ${shortSha} | updated ${buildDate} | public ip ${publicIp} | ${impersonation} | ${deno}`;
-    targets.forEach((target) => {
-      target.textContent = label;
-    });
-  } catch {
-    targets.forEach((target) => {
-      target.textContent = "Version unknown";
-    });
+const $ = (selector) => document.querySelector(selector);
+const $$ = (selector) => Array.from(document.querySelectorAll(selector));
+
+function migrateThemeStorage() {
+  if (!localStorage.getItem(THEME_KEY) && localStorage.getItem(LEGACY_THEME_KEY)) {
+    localStorage.setItem(THEME_KEY, localStorage.getItem(LEGACY_THEME_KEY));
   }
+  if (!localStorage.getItem(MODE_KEY) && localStorage.getItem(LEGACY_MODE_KEY)) {
+    localStorage.setItem(MODE_KEY, localStorage.getItem(LEGACY_MODE_KEY));
+  }
+}
+
+function savedTheme() {
+  return localStorage.getItem(THEME_KEY) || "lavender";
+}
+
+function savedMode() {
+  return localStorage.getItem(MODE_KEY) || "system";
+}
+
+function resolvedMode(mode = savedMode()) {
+  return mode === "system" ? (systemScheme.matches ? "dark" : "light") : mode;
+}
+
+function applyTheme() {
+  const theme = savedTheme();
+  const mode = savedMode();
+  document.documentElement.dataset.theme = theme;
+  document.documentElement.dataset.mode = resolvedMode(mode);
+  $("#themeSelect").value = theme;
+  $("#modeSelect").value = mode;
 }
 
 function escapeHtml(value) {
@@ -66,82 +81,6 @@ function formatDate(value) {
   }).format(new Date(value));
 }
 
-function settingsLabel(settings = {}) {
-  const type = settings.media_type || "auto";
-  if (type === "auto") return "Auto";
-  if (type === "audio") {
-    const label = ["Audio", settings.audio_format, settings.audio_bitrate]
-      .filter((value) => value && value !== "auto")
-      .join(" ");
-    return label === "Audio" ? "Audio Auto" : label || "Audio Auto";
-  }
-  if (type === "captions") {
-    const label = ["Captions", settings.caption_format, settings.caption_langs]
-      .filter((value) => value && value !== "auto")
-      .join(" ");
-    return label === "Captions" ? "Captions Auto" : label || "Captions Auto";
-  }
-  if (type === "thumbnail") {
-    const label = ["Thumbnail", settings.thumbnail_format]
-      .filter((value) => value && value !== "auto")
-      .join(" ");
-    return label === "Thumbnail" ? "Thumbnail Auto" : label || "Thumbnail Auto";
-  }
-  const label = [
-    "Video",
-    settings.video_format,
-    settings.video_codec,
-    settings.video_quality && settings.video_quality !== "auto" ? `${settings.video_quality}p` : null,
-  ]
-    .filter((value) => value && value !== "auto")
-    .join(" ");
-  return label === "Video" ? "Video Auto" : label || "Video Auto";
-}
-
-function updateSettingVisibility() {
-  const mediaType = $("#mediaType")?.value || "video";
-  document.querySelectorAll("[data-setting-group]").forEach((element) => {
-    const group = element.dataset.settingGroup;
-    element.hidden = mediaType !== group;
-  });
-  updateVideoCodecOptions();
-  updateAudioBitrateState();
-}
-
-function updateVideoCodecOptions() {
-  const format = $("#videoFormat")?.value || "auto";
-  const codec = $("#videoCodec");
-  if (!codec) return;
-  const allowed = compatibleVideoCodecs[format] || compatibleVideoCodecs.auto;
-  Array.from(codec.options).forEach((option) => {
-    option.disabled = !allowed.includes(option.value);
-  });
-  if (!allowed.includes(codec.value)) {
-    codec.value = "auto";
-  }
-}
-
-function updateAudioBitrateState() {
-  const format = $("#audioFormat")?.value || "auto";
-  const bitrate = $("#audioBitrate");
-  if (!bitrate) return;
-  const isLossless = ["flac", "wav"].includes(format);
-  bitrate.disabled = isLossless;
-  if (isLossless) {
-    bitrate.value = "auto";
-  }
-}
-
-function openSettings() {
-  $("#settingsOverlay").hidden = false;
-  updateSettingVisibility();
-  $("#mediaType")?.focus();
-}
-
-function closeSettings() {
-  $("#settingsOverlay").hidden = true;
-}
-
 async function api(path, options = {}) {
   const response = await fetch(path, {
     credentials: "same-origin",
@@ -165,20 +104,141 @@ async function api(path, options = {}) {
   return payload;
 }
 
+function selectedMediaType() {
+  return new FormData($("#downloadForm")).get("media_type") || "video";
+}
+
+function settingsLabel(settings = {}) {
+  const type = settings.media_type || "video";
+  if (type === "audio") {
+    const label = ["Audio", settings.audio_format, settings.audio_bitrate]
+      .filter((value) => value && value !== "auto")
+      .join(" ");
+    return label === "Audio" ? "Audio Auto" : label || "Audio Auto";
+  }
+  const label = [
+    "Video",
+    settings.video_format,
+    settings.video_codec,
+    settings.video_quality && settings.video_quality !== "auto" ? `${settings.video_quality}p` : null,
+  ]
+    .filter((value) => value && value !== "auto")
+    .join(" ");
+  return label === "Video" ? "Video Auto" : label || "Video Auto";
+}
+
+function downloadSettingsSummary() {
+  const form = new FormData($("#downloadForm"));
+  const type = form.get("media_type") || "video";
+  const playlist = form.get("playlist") === "on" ? "Playlist on" : "Playlist off";
+  if (type === "audio") {
+    return [
+      "Audio",
+      form.get("audio_format") === "auto" ? "Auto format" : String(form.get("audio_format")).toUpperCase(),
+      ["flac", "wav"].includes(form.get("audio_format")) || form.get("audio_bitrate") === "auto"
+        ? "Auto bitrate"
+        : form.get("audio_bitrate"),
+      playlist,
+    ];
+  }
+  return [
+    "Video",
+    form.get("video_format") === "auto" ? "Auto format" : String(form.get("video_format")).toUpperCase(),
+    form.get("video_codec") === "auto" ? "Auto codec" : String(form.get("video_codec")).toUpperCase(),
+    playlist,
+  ];
+}
+
+function renderOptionsSummary() {
+  $("#optionsSummary").innerHTML = downloadSettingsSummary()
+    .map((item) => `<span class="chip">${escapeHtml(item)}</span>`)
+    .join("");
+}
+
+function updateVideoCodecOptions() {
+  const format = $("#videoFormat").value;
+  const codec = $("#videoCodec");
+  const allowed = compatibleVideoCodecs[format] || compatibleVideoCodecs.auto;
+  Array.from(codec.options).forEach((option) => {
+    option.disabled = !allowed.includes(option.value);
+  });
+  if (!allowed.includes(codec.value)) {
+    codec.value = "auto";
+  }
+}
+
+function updateAudioBitrateState() {
+  const format = $("#audioFormat").value;
+  const bitrate = $("#audioBitrate");
+  const isLossless = ["flac", "wav"].includes(format);
+  bitrate.disabled = isLossless;
+  if (isLossless) {
+    bitrate.value = "auto";
+  }
+}
+
+function updateDownloadOptions() {
+  const type = selectedMediaType();
+  $$("[data-setting-group]").forEach((element) => {
+    element.hidden = element.dataset.settingGroup !== type;
+  });
+  updateVideoCodecOptions();
+  updateAudioBitrateState();
+  renderOptionsSummary();
+}
+
+function setOptionsOpen(open) {
+  $("#downloadOptionsPanel").hidden = !open;
+  $("#optionsToggle").setAttribute("aria-expanded", String(open));
+}
+
+function resetDownloadOptions() {
+  $("#downloadForm").reset();
+  setOptionsOpen(false);
+  updateDownloadOptions();
+}
+
 function showLogin() {
   $("#loginView").hidden = false;
   $("#appView").hidden = true;
+  $("#userMenu").hidden = true;
   if (state.poller) clearInterval(state.poller);
 }
 
 function showApp() {
   $("#loginView").hidden = true;
   $("#appView").hidden = false;
-  $(".workspace")?.classList.toggle("has-admin", Boolean(state.user?.is_admin));
-  $("#currentUser").textContent = state.user?.is_admin
-    ? `${state.user.username} - Admin`
-    : state.user?.username;
-  $("#adminPanel").hidden = !state.user?.is_admin;
+  $("#currentUser").textContent = state.user?.username || "";
+  $("#userMenuTitle").textContent = state.user?.username || "Pullora";
+  $("#adminTools").hidden = !state.user?.is_admin;
+}
+
+async function loadSystemInfo() {
+  state.systemInfo = await api("/api/health");
+  renderAboutInfo();
+}
+
+function renderAboutInfo() {
+  const payload = state.systemInfo || {};
+  const shortSha = payload.build_sha ? payload.build_sha.slice(0, 12) : "dev";
+  const rows = [
+    ["App Name", "Pullora"],
+    ["Pullora version", payload.version || "0.1.0"],
+    ["GitHub SHA", shortSha],
+    ["Build date", payload.build_date || "unknown"],
+    ["yt-dlp version", payload.yt_dlp_version || "unknown"],
+    ["Public IP", payload.public_ip || "unavailable"],
+    ["Impersonation", payload.curl_cffi_available ? "available" : "missing"],
+    ["Deno", payload.deno_version || "unavailable"],
+    ["yt-dlp-ejs", payload.yt_dlp_ejs_version || "unavailable"],
+    ["ffmpeg", payload.ffmpeg_version || "unavailable"],
+    ["Server", payload.status || "unknown"],
+    ["Diagnostics", "No client-side errors recorded"],
+    ["Logs", "Server logs are available through Docker"],
+  ];
+  $("#aboutInfo").innerHTML = rows
+    .map(([label, value]) => `<div class="about-row"><span>${escapeHtml(label)}</span><code>${escapeHtml(value)}</code></div>`)
+    .join("");
 }
 
 async function refreshAll() {
@@ -198,8 +258,27 @@ async function loadUsers() {
   renderUsers();
 }
 
+function renderQueueStats() {
+  const counts = state.downloads.reduce(
+    (acc, item) => {
+      acc[item.status] = (acc[item.status] || 0) + 1;
+      return acc;
+    },
+    { running: 0, queued: 0, completed: 0, failed: 0 },
+  );
+  $("#queueStats").innerHTML = [
+    `Active ${counts.running || 0}`,
+    `Queued ${counts.queued || 0}`,
+    `Completed ${counts.completed || 0}`,
+    `Failed ${counts.failed || 0}`,
+  ]
+    .map((item) => `<span class="chip">${escapeHtml(item)}</span>`)
+    .join("");
+}
+
 function renderDownloads() {
   const target = $("#downloadList");
+  renderQueueStats();
   if (!state.downloads.length) {
     target.innerHTML = '<div class="empty-state">No downloads</div>';
     return;
@@ -212,20 +291,19 @@ function renderDownloads() {
       const canDelete = item.status !== "running";
       const progress = Math.max(0, Math.min(100, item.progress || 0));
       const size = formatBytes(item.file_size);
-      const detail = [settingsLabel(item.settings), size, item.speed, item.eta ? `ETA ${item.eta}` : null]
+      const detail = [settingsLabel(item.settings), size, item.speed, item.eta ? `ETA ${item.eta}` : null, formatDate(item.created_at)]
         .filter(Boolean)
         .join(" - ");
       return `
-        <article class="download-card">
+        <article class="download-card ${escapeHtml(item.status)}">
           <div class="download-top">
             <div>
               <div class="download-title">${escapeHtml(title)}</div>
               <div class="meta">${escapeHtml(detail || item.url)}</div>
             </div>
-            <span class="badge ${escapeHtml(item.status)}">${escapeHtml(item.status)}</span>
+            <span class="status-chip ${escapeHtml(item.status)}">${escapeHtml(item.status)}</span>
           </div>
-          <div class="progress-track"><div class="progress-bar" style="width: ${progress}%"></div></div>
-          <div class="meta">${progress.toFixed(0)}% - ${escapeHtml(formatDate(item.created_at))}</div>
+          <div class="progress-track"><div class="progress-bar" data-progress="${progress}"></div></div>
           ${item.error ? `<div class="meta">${escapeHtml(item.error)}</div>` : ""}
           <div class="card-actions">
             ${
@@ -239,21 +317,17 @@ function renderDownloads() {
                   </a>`
                 : ""
             }
-            ${
-              canCancel
-                ? `<button class="ghost danger" type="button" data-action="cancel" data-id="${item.id}">Stop</button>`
-                : ""
-            }
-            ${
-              canDelete
-                ? `<button class="ghost danger" type="button" data-action="delete" data-id="${item.id}">Remove</button>`
-                : ""
-            }
+            ${canCancel ? `<button class="button tonal" type="button" data-action="cancel" data-id="${item.id}">Stop</button>` : ""}
+            ${canDelete ? `<button class="button text" type="button" data-action="delete" data-id="${item.id}">Remove</button>` : ""}
           </div>
         </article>
       `;
     })
     .join("");
+
+  $$(".progress-bar").forEach((bar) => {
+    bar.style.width = `${bar.dataset.progress}%`;
+  });
 }
 
 function renderUsers() {
@@ -269,10 +343,10 @@ function renderUsers() {
             </div>
           </div>
           <div class="user-actions">
-            <button class="ghost" type="button" data-user-action="password" data-id="${user.id}">Password</button>
+            <button class="button text" type="button" data-user-action="password" data-id="${user.id}">Password</button>
             ${
               user.id !== state.user.id
-                ? `<button class="ghost danger" type="button" data-user-action="delete" data-id="${user.id}">Delete</button>`
+                ? `<button class="button text" type="button" data-user-action="delete" data-id="${user.id}">Delete</button>`
                 : ""
             }
           </div>
@@ -282,13 +356,26 @@ function renderUsers() {
     .join("");
 }
 
+function openUserMenu() {
+  $("#userMenu").hidden = false;
+  $("#userMenuButton").setAttribute("aria-expanded", "true");
+  loadSystemInfo().catch(() => renderAboutInfo());
+}
+
+function closeUserMenu() {
+  $("#userMenu").hidden = true;
+  $("#userMenuButton").setAttribute("aria-expanded", "false");
+}
+
 async function boot() {
-  await loadVersion();
+  migrateThemeStorage();
+  applyTheme();
+  updateDownloadOptions();
   try {
     const payload = await api("/api/me");
     state.user = payload.user;
     showApp();
-    await refreshAll();
+    await Promise.all([refreshAll(), loadSystemInfo()]);
     state.poller = setInterval(refreshAll, 2500);
   } catch {
     showLogin();
@@ -311,7 +398,7 @@ $("#loginForm").addEventListener("submit", async (event) => {
     state.user = payload.user;
     loginForm?.reset();
     showApp();
-    await refreshAll();
+    await Promise.all([refreshAll(), loadSystemInfo()]);
     state.poller = setInterval(refreshAll, 2500);
   } catch (error) {
     $("#loginError").textContent = error.message;
@@ -334,21 +421,18 @@ $("#downloadForm").addEventListener("submit", async (event) => {
       method: "POST",
       body: JSON.stringify({
         url: form.get("url"),
-        media_type: form.get("media_type"),
-        video_format: form.get("video_format"),
-        video_codec: form.get("video_codec"),
-        video_quality: form.get("video_quality"),
-        audio_format: form.get("audio_format"),
-        audio_bitrate: form.get("audio_bitrate"),
-        caption_format: form.get("caption_format"),
-        caption_langs: form.get("caption_langs"),
-        thumbnail_format: form.get("thumbnail_format"),
+        media_type: form.get("media_type") || "video",
+        video_format: form.get("video_format") || "auto",
+        video_codec: form.get("video_codec") || "auto",
+        video_quality: form.get("video_quality") || "auto",
+        audio_format: form.get("audio_format") || "auto",
+        audio_bitrate: form.get("audio_bitrate") || "auto",
         playlist: form.get("playlist") === "on",
       }),
     });
     downloadForm?.reset();
-    updateSettingVisibility();
-    closeSettings();
+    setOptionsOpen(false);
+    updateDownloadOptions();
     await loadDownloads();
   } catch (error) {
     $("#downloadError").textContent = error.message;
@@ -374,21 +458,47 @@ $("#downloadList").addEventListener("click", async (event) => {
   }
 });
 
+$("#optionsToggle").addEventListener("click", () => {
+  setOptionsOpen($("#downloadOptionsPanel").hidden);
+});
+$("#optionsReset").addEventListener("click", resetDownloadOptions);
+$("#optionsDone").addEventListener("click", () => setOptionsOpen(false));
+$("#videoFormat").addEventListener("change", updateDownloadOptions);
+$("#videoCodec").addEventListener("change", renderOptionsSummary);
+$("#audioFormat").addEventListener("change", updateDownloadOptions);
+$("#audioBitrate").addEventListener("change", renderOptionsSummary);
+$$("input[name='media_type']").forEach((input) => input.addEventListener("change", updateDownloadOptions));
+$("#downloadForm").addEventListener("change", renderOptionsSummary);
 $("#refreshButton").addEventListener("click", loadDownloads);
-$("#mediaType").addEventListener("change", updateSettingVisibility);
-$("#videoFormat").addEventListener("change", updateVideoCodecOptions);
-$("#audioFormat").addEventListener("change", updateAudioBitrateState);
-$("#settingsButton").addEventListener("click", openSettings);
-$("#settingsCloseButton").addEventListener("click", closeSettings);
-$("#settingsOverlay").addEventListener("click", (event) => {
-  if (event.target.matches("[data-settings-close]")) {
-    closeSettings();
+
+$("#userMenuButton").addEventListener("click", openUserMenu);
+$("#userMenuClose").addEventListener("click", closeUserMenu);
+$("#userMenu").addEventListener("click", (event) => {
+  if (event.target.matches("[data-menu-close]")) {
+    closeUserMenu();
   }
 });
 document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape" && !$("#settingsOverlay").hidden) {
-    closeSettings();
+  if (event.key === "Escape" && !$("#userMenu").hidden) {
+    closeUserMenu();
   }
+});
+
+$("#themeSelect").addEventListener("change", (event) => {
+  localStorage.setItem(THEME_KEY, event.target.value);
+  applyTheme();
+});
+$("#modeSelect").addEventListener("change", (event) => {
+  localStorage.setItem(MODE_KEY, event.target.value);
+  applyTheme();
+});
+systemScheme.addEventListener("change", () => {
+  if (savedMode() === "system") applyTheme();
+});
+
+$("#copyDebugButton").addEventListener("click", async () => {
+  const payload = JSON.stringify(state.systemInfo || {}, null, 2);
+  await navigator.clipboard.writeText(payload);
 });
 
 $("#userForm").addEventListener("submit", async (event) => {
@@ -436,5 +546,4 @@ $("#userList").addEventListener("click", async (event) => {
   }
 });
 
-updateSettingVisibility();
 boot();

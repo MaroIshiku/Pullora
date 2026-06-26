@@ -1,16 +1,21 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="lavender" data-mode="dark">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>YTDLP Client</title>
+    <title>Pullora</title>
+    <link rel="icon" href="/static/pullora-logo.png" />
     <link rel="stylesheet" href="/static/style.css" />
   </head>
   <body>
     <main id="loginView" class="login-shell" hidden>
-      <section class="login-panel">
-        <div class="brand-mark">YT</div>
-        <h1>YTDLP Client</h1>
+      <section class="login-card surface-card">
+        <img class="app-logo large" src="/static/pullora-logo.png" alt="" />
+        <div>
+          <p class="overline">Self-hosted</p>
+          <h1>Pullora</h1>
+          <p class="subtle">Self-hosted media downloader</p>
+        </div>
         <form id="loginForm" class="stack">
           <label>
             Username
@@ -20,168 +25,226 @@
             Password
             <input name="password" type="password" autocomplete="current-password" required />
           </label>
-          <button class="primary" type="submit">Sign in</button>
+          <button class="button primary" type="submit">Sign in</button>
           <p id="loginError" class="error" role="alert"></p>
         </form>
       </section>
     </main>
 
     <main id="appView" class="app-shell" hidden>
-      <header class="topbar">
-        <div>
-          <div class="eyebrow">Self-hosted</div>
-          <h1>YTDLP Client</h1>
+      <header class="app-header">
+        <div class="brand">
+          <span class="logo-container">
+            <img class="app-logo" src="/static/pullora-logo.png" alt="" />
+          </span>
+          <div>
+            <p class="overline">Self-hosted</p>
+            <h1>Pullora</h1>
+          </div>
         </div>
-        <div class="session-box">
-          <span id="currentUser"></span>
-          <button id="logoutButton" class="ghost" type="button">Sign out</button>
+        <div class="header-actions">
+          <span id="currentUser" class="current-user"></span>
+          <button id="userMenuButton" class="icon-menu-button" type="button" aria-label="Open menu" aria-expanded="false">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 8h.01"></path>
+              <path d="M12 12h.01"></path>
+              <path d="M12 16h.01"></path>
+            </svg>
+          </button>
         </div>
       </header>
 
-      <section class="workspace">
-        <aside class="panel submit-panel">
-          <h2>New Download</h2>
+      <section class="dashboard">
+        <aside class="surface-card new-download-card">
+          <div class="section-title">
+            <h2>New Download</h2>
+          </div>
           <form id="downloadForm" class="stack">
             <label>
               URL
               <input name="url" type="url" placeholder="https://..." required />
             </label>
-            <div class="submit-actions">
-              <button id="settingsButton" class="ghost" type="button">Settings</button>
-              <button class="primary" type="submit">Add to Queue</button>
-            </div>
-            <div id="settingsOverlay" class="settings-overlay" hidden>
-              <div class="settings-backdrop" data-settings-close></div>
-              <section class="settings-dialog" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
-                <div class="section-head">
-                  <h2 id="settingsTitle">Download Settings</h2>
-                  <button id="settingsCloseButton" class="ghost" type="button">Close</button>
-                </div>
-                <div class="settings-grid">
-                  <label>
-                    Type
-                    <select id="mediaType" name="media_type">
-                      <option value="video" selected>Video</option>
-                      <option value="audio">Audio</option>
-                      <option value="captions">Captions</option>
-                      <option value="thumbnail">Thumbnail</option>
-                    </select>
-                  </label>
-                  <label data-setting-group="video">
-                    Video Format
-                    <select id="videoFormat" name="video_format">
-                      <option value="auto">Auto</option>
-                      <option value="mp4">MP4</option>
-                      <option value="webm">WebM</option>
-                      <option value="mkv">MKV</option>
-                    </select>
-                  </label>
-                  <label data-setting-group="video">
-                    Video Codec
-                    <select id="videoCodec" name="video_codec">
-                      <option value="auto">Auto</option>
-                      <option value="h264">H.264</option>
-                      <option value="h265">H.265</option>
-                      <option value="av1">AV1</option>
-                      <option value="vp9">VP9</option>
-                    </select>
-                  </label>
-                  <label data-setting-group="video">
-                    Resolution
-                    <select name="video_quality">
-                      <option value="auto">Auto</option>
-                      <option value="2160">2160p</option>
-                      <option value="1440">1440p</option>
-                      <option value="1080">1080p</option>
-                      <option value="720">720p</option>
-                      <option value="480">480p</option>
-                      <option value="360">360p</option>
-                    </select>
-                  </label>
-                  <label data-setting-group="audio">
-                    Audio Format
-                    <select id="audioFormat" name="audio_format">
-                      <option value="auto">Auto</option>
-                      <option value="mp3">MP3</option>
-                      <option value="m4a">M4A</option>
-                      <option value="opus">Opus</option>
-                      <option value="flac">FLAC</option>
-                      <option value="wav">WAV</option>
-                    </select>
-                  </label>
-                  <label data-setting-group="audio">
-                    Bitrate
-                    <select id="audioBitrate" name="audio_bitrate">
-                      <option value="auto">Auto</option>
-                      <option value="320K">320K</option>
-                      <option value="256K">256K</option>
-                      <option value="192K">192K</option>
-                      <option value="128K">128K</option>
-                      <option value="96K">96K</option>
-                    </select>
-                  </label>
-                  <label data-setting-group="captions">
-                    Caption Format
-                    <select name="caption_format">
-                      <option value="auto">Auto</option>
-                      <option value="srt">SRT</option>
-                      <option value="vtt">VTT</option>
-                      <option value="txt">TXT</option>
-                    </select>
-                  </label>
-                  <label data-setting-group="captions">
-                    Languages
-                    <input name="caption_langs" value="de,en" placeholder="de,en" />
-                  </label>
-                  <label data-setting-group="thumbnail">
-                    Thumbnail Format
-                    <select name="thumbnail_format">
-                      <option value="auto">Auto</option>
-                      <option value="jpg">JPG</option>
-                      <option value="png">PNG</option>
-                      <option value="webp">WebP</option>
-                    </select>
-                  </label>
-                  <label class="checkbox-row">
-                    <input name="playlist" type="checkbox" />
-                    Allow playlist
-                  </label>
-                </div>
-              </section>
-            </div>
+
+            <button id="optionsToggle" class="options-summary" type="button" aria-expanded="false">
+              <span>
+                <span class="summary-title">Download options</span>
+                <span id="optionsSummary" class="summary-chips"></span>
+              </span>
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="m6 9 6 6 6-6"></path>
+              </svg>
+            </button>
+
+            <section id="downloadOptionsPanel" class="download-options-panel" hidden>
+              <div class="options-panel-head">
+                <h3>Download options</h3>
+                <button id="optionsReset" class="button text" type="button">Reset</button>
+              </div>
+
+              <div class="segmented" role="group" aria-label="Download type">
+                <label>
+                  <input type="radio" name="media_type" value="video" checked />
+                  <span>Video</span>
+                </label>
+                <label>
+                  <input type="radio" name="media_type" value="audio" />
+                  <span>Audio</span>
+                </label>
+              </div>
+
+              <div class="settings-grid">
+                <label data-setting-group="video">
+                  Video Format
+                  <select id="videoFormat" name="video_format">
+                    <option value="auto">Auto</option>
+                    <option value="mp4">MP4</option>
+                    <option value="webm">WebM</option>
+                    <option value="mkv">MKV</option>
+                  </select>
+                </label>
+                <label data-setting-group="video">
+                  Video Codec
+                  <select id="videoCodec" name="video_codec">
+                    <option value="auto">Auto</option>
+                    <option value="h264">H.264</option>
+                    <option value="h265">H.265</option>
+                    <option value="vp9">VP9</option>
+                    <option value="av1">AV1</option>
+                  </select>
+                </label>
+                <label data-setting-group="video">
+                  Quality
+                  <select name="video_quality">
+                    <option value="auto">Auto</option>
+                    <option value="2160">2160p</option>
+                    <option value="1440">1440p</option>
+                    <option value="1080">1080p</option>
+                    <option value="720">720p</option>
+                    <option value="480">480p</option>
+                    <option value="360">360p</option>
+                  </select>
+                </label>
+                <label data-setting-group="audio">
+                  Audio Format
+                  <select id="audioFormat" name="audio_format">
+                    <option value="auto">Auto</option>
+                    <option value="mp3">MP3</option>
+                    <option value="m4a">M4A</option>
+                    <option value="opus">Opus</option>
+                    <option value="flac">FLAC</option>
+                  </select>
+                </label>
+                <label data-setting-group="audio">
+                  Bitrate
+                  <select id="audioBitrate" name="audio_bitrate">
+                    <option value="auto">Auto</option>
+                    <option value="320K">320K</option>
+                    <option value="256K">256K</option>
+                    <option value="192K">192K</option>
+                    <option value="128K">128K</option>
+                    <option value="96K">96K</option>
+                  </select>
+                </label>
+              </div>
+
+              <label class="switch-row">
+                <span>Allow playlist</span>
+                <input name="playlist" type="checkbox" />
+                <span class="switch-track" aria-hidden="true"></span>
+              </label>
+
+              <div class="panel-actions">
+                <button id="optionsDone" class="button tonal" type="button">Done</button>
+              </div>
+            </section>
+
+            <button class="button primary" type="submit">Add to Queue</button>
             <p id="downloadError" class="error" role="alert"></p>
           </form>
         </aside>
 
-        <section class="panel queue-panel">
-          <div class="section-head">
-            <h2>Queue</h2>
-            <button id="refreshButton" class="ghost" type="button">Refresh</button>
+        <section class="surface-card queue-section">
+          <div class="queue-head">
+            <div>
+              <h2>Queue</h2>
+              <div id="queueStats" class="queue-stats"></div>
+            </div>
+            <button id="refreshButton" class="button tonal" type="button">Refresh</button>
           </div>
           <div id="downloadList" class="download-list"></div>
-        </section>
-
-        <section id="adminPanel" class="panel admin-panel" hidden>
-          <h2>Users</h2>
-          <form id="userForm" class="stack compact-form">
-            <input name="username" placeholder="Username" required minlength="3" />
-            <input name="password" type="password" placeholder="Password" required minlength="10" />
-            <label class="checkbox-row">
-              <input name="is_admin" type="checkbox" />
-              Admin
-            </label>
-            <button class="primary" type="submit">Create</button>
-            <p id="userError" class="error" role="alert"></p>
-          </form>
-          <div id="userList" class="user-list"></div>
         </section>
       </section>
     </main>
 
-    <footer class="system-footer">
-      <span data-version>Loading system information</span>
-    </footer>
+    <aside id="userMenu" class="user-sheet" hidden>
+      <div class="sheet-backdrop" data-menu-close></div>
+      <section class="sheet-panel" role="dialog" aria-modal="true" aria-labelledby="userMenuTitle">
+        <div class="sheet-head">
+          <div class="brand compact">
+            <span class="logo-container small">
+              <img class="app-logo" src="/static/pullora-logo.png" alt="" />
+            </span>
+            <div>
+              <p class="overline">Signed in as</p>
+              <h2 id="userMenuTitle">Pullora</h2>
+            </div>
+          </div>
+          <button id="userMenuClose" class="icon-menu-button" type="button" aria-label="Close menu">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M6 6l12 12"></path>
+              <path d="M18 6 6 18"></path>
+            </svg>
+          </button>
+        </div>
 
-    <script src="/static/app.js?v=20260620-9"></script>
+        <div class="sheet-section">
+          <h3>Appearance</h3>
+          <label>
+            Theme
+            <select id="themeSelect">
+              <option value="lavender">Lavender</option>
+              <option value="mint">Mint</option>
+              <option value="sky">Sky</option>
+              <option value="amber">Amber</option>
+              <option value="graphite">Graphite</option>
+            </select>
+          </label>
+          <label>
+            Mode
+            <select id="modeSelect">
+              <option value="system">System</option>
+              <option value="light">Light</option>
+              <option value="dark">Dark</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="sheet-section">
+          <h3>About</h3>
+          <div id="aboutInfo" class="about-grid"></div>
+          <button id="copyDebugButton" class="button tonal" type="button">Copy debug details</button>
+        </div>
+
+        <div id="adminTools" class="sheet-section" hidden>
+          <h3>User Management</h3>
+          <form id="userForm" class="stack compact-form">
+            <input name="username" placeholder="Username" required minlength="3" />
+            <input name="password" type="password" placeholder="Password" required minlength="10" />
+            <label class="switch-row">
+              <span>Admin</span>
+              <input name="is_admin" type="checkbox" />
+              <span class="switch-track" aria-hidden="true"></span>
+            </label>
+            <button class="button tonal" type="submit">Create user</button>
+            <p id="userError" class="error" role="alert"></p>
+          </form>
+          <div id="userList" class="user-list"></div>
+        </div>
+
+        <button id="logoutButton" class="button danger" type="button">Sign out</button>
+      </section>
+    </aside>
+
+    <script src="/static/app.js?v=20260626-1"></script>
   </body>
 </html>

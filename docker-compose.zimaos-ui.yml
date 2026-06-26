@@ -1,8 +1,8 @@
-name: ish_ytdlp
+name: pullora
 services:
-  ish-ytdlp:
-    image: ghcr.io/maroishiku/ish-ytdlp:latest
-    container_name: ish-ytdlp
+  pullora:
+    image: ghcr.io/maroishiku/pullora:latest
+    container_name: pullora
     restart: unless-stopped
     ports:
       - target: 8080
@@ -17,30 +17,30 @@ services:
       TZ: Europe/Berlin
     volumes:
       - type: bind
-        source: /media/ZimaOS-HD/AppData/ish_ytdlp/data
+        source: /media/ZimaOS-HD/AppData/pullora/data
         target: /data
       - type: bind
-        source: /media/ZimaOS-HD/AppData/ish_ytdlp/downloads
+        source: /media/ZimaOS-HD/AppData/pullora/downloads
         target: /downloads
       - type: bind
-        source: /media/ZimaOS-HD/AppData/ish_ytdlp/secrets/admin_password.txt
+        source: /media/ZimaOS-HD/AppData/pullora/secrets/admin_password.txt
         target: /run/secrets/first_admin_password
         read_only: true
     network_mode: bridge
     privileged: false
     labels:
-      icon: https://images.icon-icons.com/1495/PNG/512/youtubedl_102951.png
+      icon: https://raw.githubusercontent.com/MaroIshiku/Pullora/main/app/static/pullora-logo.png
 
 x-casaos:
   author: self
   category: self
   hostname: ""
-  icon: https://images.icon-icons.com/1495/PNG/512/youtubedl_102951.png
+  icon: https://raw.githubusercontent.com/MaroIshiku/Pullora/main/app/static/pullora-logo.png
   index: /
   is_uncontrolled: false
   port_map: "8180"
   scheme: http
-  store_app_id: ish_ytdlp
+  store_app_id: pullora
   title:
-    custom: ish_ytdlp
-    en_us: ish_ytdlp
+    custom: Pullora
+    en_us: Pullora
