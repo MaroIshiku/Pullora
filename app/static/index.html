@@ -65,98 +65,100 @@
               <input name="url" type="url" placeholder="https://..." required />
             </label>
 
-            <button id="optionsToggle" class="options-summary" type="button" aria-expanded="false">
-              <span>
-                <span class="summary-title">Download options</span>
-                <span id="optionsSummary" class="summary-chips"></span>
-              </span>
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path d="m6 9 6 6 6-6"></path>
-              </svg>
-            </button>
+            <div id="optionsDisclosure" class="options-disclosure" data-open="false">
+              <button id="optionsToggle" class="options-summary" type="button" aria-expanded="false">
+                <span>
+                  <span class="summary-title">Download options</span>
+                  <span id="optionsSummary" class="summary-chips"></span>
+                </span>
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="m6 9 6 6 6-6"></path>
+                </svg>
+              </button>
 
-            <section id="downloadOptionsPanel" class="download-options-panel" hidden>
-              <div class="options-panel-head">
-                <h3>Download options</h3>
-                <button id="optionsReset" class="button text" type="button">Reset</button>
-              </div>
+              <section id="downloadOptionsPanel" class="download-options-panel" hidden>
+                <div class="options-panel-head">
+                  <h3>Download options</h3>
+                  <button id="optionsReset" class="button text" type="button">Reset</button>
+                </div>
 
-              <div class="segmented" role="group" aria-label="Download type">
-                <label>
-                  <input type="radio" name="media_type" value="video" checked />
-                  <span>Video</span>
-                </label>
-                <label>
-                  <input type="radio" name="media_type" value="audio" />
-                  <span>Audio</span>
-                </label>
-              </div>
+                <div class="segmented" role="group" aria-label="Download type">
+                  <label>
+                    <input type="radio" name="media_type" value="video" checked />
+                    <span>Video</span>
+                  </label>
+                  <label>
+                    <input type="radio" name="media_type" value="audio" />
+                    <span>Audio</span>
+                  </label>
+                </div>
 
-              <div class="settings-grid">
-                <label data-setting-group="video">
-                  Video Format
-                  <select id="videoFormat" name="video_format">
-                    <option value="auto">Auto</option>
-                    <option value="mp4">MP4</option>
-                    <option value="webm">WebM</option>
-                    <option value="mkv">MKV</option>
-                  </select>
-                </label>
-                <label data-setting-group="video">
-                  Video Codec
-                  <select id="videoCodec" name="video_codec">
-                    <option value="auto">Auto</option>
-                    <option value="h264">H.264</option>
-                    <option value="h265">H.265</option>
-                    <option value="vp9">VP9</option>
-                    <option value="av1">AV1</option>
-                  </select>
-                </label>
-                <label data-setting-group="video">
-                  Quality
-                  <select name="video_quality">
-                    <option value="auto">Auto</option>
-                    <option value="2160">2160p</option>
-                    <option value="1440">1440p</option>
-                    <option value="1080">1080p</option>
-                    <option value="720">720p</option>
-                    <option value="480">480p</option>
-                    <option value="360">360p</option>
-                  </select>
-                </label>
-                <label data-setting-group="audio">
-                  Audio Format
-                  <select id="audioFormat" name="audio_format">
-                    <option value="auto">Auto</option>
-                    <option value="mp3">MP3</option>
-                    <option value="m4a">M4A</option>
-                    <option value="opus">Opus</option>
-                    <option value="flac">FLAC</option>
-                  </select>
-                </label>
-                <label data-setting-group="audio">
-                  Bitrate
-                  <select id="audioBitrate" name="audio_bitrate">
-                    <option value="auto">Auto</option>
-                    <option value="320K">320K</option>
-                    <option value="256K">256K</option>
-                    <option value="192K">192K</option>
-                    <option value="128K">128K</option>
-                    <option value="96K">96K</option>
-                  </select>
-                </label>
-              </div>
+                <div class="settings-grid">
+                  <label data-setting-group="video">
+                    Video Format
+                    <select id="videoFormat" name="video_format">
+                      <option value="auto">Auto</option>
+                      <option value="mp4">MP4</option>
+                      <option value="webm">WebM</option>
+                      <option value="mkv">MKV</option>
+                    </select>
+                  </label>
+                  <label data-setting-group="video">
+                    Video Codec
+                    <select id="videoCodec" name="video_codec">
+                      <option value="auto">Auto</option>
+                      <option value="h264">H.264</option>
+                      <option value="h265">H.265</option>
+                      <option value="vp9">VP9</option>
+                      <option value="av1">AV1</option>
+                    </select>
+                  </label>
+                  <label data-setting-group="video">
+                    Quality
+                    <select name="video_quality">
+                      <option value="auto">Auto</option>
+                      <option value="2160">2160p</option>
+                      <option value="1440">1440p</option>
+                      <option value="1080">1080p</option>
+                      <option value="720">720p</option>
+                      <option value="480">480p</option>
+                      <option value="360">360p</option>
+                    </select>
+                  </label>
+                  <label data-setting-group="audio">
+                    Audio Format
+                    <select id="audioFormat" name="audio_format">
+                      <option value="auto">Auto</option>
+                      <option value="mp3">MP3</option>
+                      <option value="m4a">M4A</option>
+                      <option value="opus">Opus</option>
+                      <option value="flac">FLAC</option>
+                    </select>
+                  </label>
+                  <label data-setting-group="audio">
+                    Bitrate
+                    <select id="audioBitrate" name="audio_bitrate">
+                      <option value="auto">Auto</option>
+                      <option value="320K">320K</option>
+                      <option value="256K">256K</option>
+                      <option value="192K">192K</option>
+                      <option value="128K">128K</option>
+                      <option value="96K">96K</option>
+                    </select>
+                  </label>
+                </div>
 
-              <label class="switch-row">
-                <span>Allow playlist</span>
-                <input name="playlist" type="checkbox" />
-                <span class="switch-track" aria-hidden="true"></span>
-              </label>
+                <label class="switch-row">
+                  <span>Allow playlist</span>
+                  <input name="playlist" type="checkbox" />
+                  <span class="switch-track" aria-hidden="true"></span>
+                </label>
 
-              <div class="panel-actions">
-                <button id="optionsDone" class="button tonal" type="button">Done</button>
-              </div>
-            </section>
+                <div class="panel-actions">
+                  <button id="optionsDone" class="button tonal" type="button">Done</button>
+                </div>
+              </section>
+            </div>
 
             <button class="button primary" type="submit">Add to Queue</button>
             <p id="downloadError" class="error" role="alert"></p>
@@ -229,7 +231,7 @@
           <h3>User Management</h3>
           <form id="userForm" class="stack compact-form">
             <input name="username" placeholder="Username" required minlength="3" />
-            <input name="password" type="password" placeholder="Password" required minlength="10" />
+            <input name="password" type="password" placeholder="Password" required minlength="12" />
             <label class="switch-row">
               <span>Admin</span>
               <input name="is_admin" type="checkbox" />

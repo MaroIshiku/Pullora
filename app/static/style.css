@@ -334,6 +334,7 @@ button {
 button,
 input,
 select {
+  min-width: 0;
   min-height: 48px;
   border-radius: var(--radius-md);
 }
@@ -574,6 +575,15 @@ h3 {
   stroke-linejoin: round;
 }
 
+.options-disclosure {
+  width: 100%;
+  overflow: hidden;
+  border: 1px solid var(--color-outline);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-soft);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-surface) 38%, transparent);
+}
+
 .options-summary {
   width: 100%;
   min-height: 58px;
@@ -581,12 +591,20 @@ h3 {
   align-items: center;
   justify-content: space-between;
   gap: var(--space-3);
-  border: 1px solid var(--color-outline);
-  border-radius: var(--radius-lg);
+  border: 0;
+  border-radius: 0;
   background: var(--color-secondary-container);
   color: var(--color-on-secondary-container);
   padding: var(--space-3) var(--space-4);
   text-align: left;
+}
+
+.options-disclosure[data-open="true"] .options-summary {
+  border-bottom: 1px solid var(--color-outline);
+}
+
+.options-disclosure[data-open="true"] .options-summary svg {
+  transform: rotate(180deg);
 }
 
 .summary-title {
@@ -623,8 +641,8 @@ h3 {
   display: grid;
   gap: var(--space-4);
   padding: var(--space-4);
-  border: 1px solid var(--color-outline);
-  border-radius: var(--radius-lg);
+  border: 0;
+  border-radius: 0;
   background: var(--color-surface-soft);
 }
 
@@ -645,6 +663,8 @@ h3 {
   position: absolute;
   opacity: 0;
   pointer-events: none;
+  width: 1px;
+  min-height: 1px;
 }
 
 .segmented span {
@@ -679,6 +699,8 @@ h3 {
   position: absolute;
   opacity: 0;
   pointer-events: none;
+  width: 1px;
+  min-height: 1px;
 }
 
 .switch-track {

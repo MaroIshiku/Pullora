@@ -10,6 +10,7 @@ const THEME_KEY = "pullora-theme";
 const MODE_KEY = "pullora-mode";
 const LEGACY_THEME_KEY = "ytdlp-client-theme";
 const LEGACY_MODE_KEY = "ytdlp-client-mode";
+const CSRF_COOKIE = "pullora_csrf";
 const systemScheme = window.matchMedia("(prefers-color-scheme: dark)");
 
 const compatibleVideoCodecs = {
@@ -21,6 +22,15 @@ const compatibleVideoCodecs = {
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => Array.from(document.querySelectorAll(selector));
+
+function cookieValue(name) {
+  const prefix = `${encodeURIComponent(name)}=`;
+  return document.cookie
+    .split(";")
+    .map((item) => item.trim())
+    .find((item) => item.startsWith(prefix))
+    ?.slice(prefix.length) || "";
+}
 
 function migrateThemeStorage() {
   if (!localStorage.getItem(THEME_KEY) && localStorage.getItem(LEGACY_THEME_KEY)) {
@@ -82,13 +92,23 @@ function formatDate(value) {
 }
 
 async function api(path, options = {}) {
+  const method = String(options.method || "GET").toUpperCase();
+  const headers = {
+    "Content-Type": "application/json",
+    ...(options.headers || {}),
+  };
+  if (!["GET", "HEAD", "OPTIONS"].includes(method)) {
+    const csrfToken = cookieValue(CSRF_COOKIE);
+    if (csrfToken) {
+      headers["X-CSRF-Token"] = csrfToken;
+    }
+  }
+
   const response = await fetch(path, {
     credentials: "same-origin",
-    headers: {
-      "Content-Type": "application/json",
-      ...(options.headers || {}),
-    },
     ...options,
+    method,
+    headers,
   });
 
   let payload = {};
@@ -190,6 +210,7 @@ function updateDownloadOptions() {
 function setOptionsOpen(open) {
   $("#downloadOptionsPanel").hidden = !open;
   $("#optionsToggle").setAttribute("aria-expanded", String(open));
+  $("#optionsDisclosure").dataset.open = String(open);
 }
 
 function resetDownloadOptions() {

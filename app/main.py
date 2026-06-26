@@ -19,8 +19,8 @@ from typing import Any, Literal
 from urllib.parse import urlparse
 from urllib.request import urlopen
 
-from fastapi import Cookie, Depends, FastAPI, HTTPException, Request, Response
-from fastapi.responses import FileResponse
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -32,6 +32,17 @@ DOWNLOAD_DIR = Path(os.getenv("DOWNLOAD_DIR", "./downloads")).resolve()
 DB_PATH = DATA_DIR / "app.db"
 SESSION_DAYS = int(os.getenv("SESSION_DAYS", "14"))
 COOKIE_SECURE = os.getenv("APP_COOKIE_SECURE", "false").lower() == "true"
+COOKIE_SAMESITE = os.getenv("APP_COOKIE_SAMESITE", "strict").lower()
+if COOKIE_SAMESITE not in {"strict", "lax", "none"}:
+    COOKIE_SAMESITE = "strict"
+if COOKIE_SAMESITE == "none" and not COOKIE_SECURE:
+    COOKIE_SAMESITE = "lax"
+SESSION_COOKIE_NAME = "__Host-pullora-session" if COOKIE_SECURE else "pullora_session"
+CSRF_COOKIE_NAME = "pullora_csrf"
+LEGACY_SESSION_COOKIE_NAME = "session"
+LOGIN_WINDOW_SECONDS = int(os.getenv("APP_LOGIN_RATE_WINDOW_SECONDS", "900"))
+LOGIN_MAX_FAILURES = int(os.getenv("APP_LOGIN_MAX_FAILURES", "5"))
+MIN_PASSWORD_LENGTH = max(12, int(os.getenv("APP_MIN_PASSWORD_LENGTH", "12")))
 APP_VERSION = os.getenv("APP_VERSION", "0.1.0")
 APP_BUILD_SHA = os.getenv("APP_BUILD_SHA", "dev")
 APP_BUILD_DATE = os.getenv("APP_BUILD_DATE", "unknown")
@@ -48,6 +59,8 @@ active_process: subprocess.Popen[str] | None = None
 active_download_id: int | None = None
 public_ip_lock = threading.Lock()
 public_ip_cache: dict[str, Any] = {"value": "unavailable", "expires_at": 0.0}
+login_attempts_lock = threading.Lock()
+login_failures: dict[str, list[float]] = {}
 
 
 class LoginPayload(BaseModel):
@@ -72,12 +85,12 @@ class DownloadPayload(BaseModel):
 
 class UserCreatePayload(BaseModel):
     username: str = Field(min_length=3, max_length=80)
-    password: str = Field(min_length=10, max_length=4096)
+    password: str = Field(min_length=12, max_length=4096)
     is_admin: bool = False
 
 
 class PasswordPayload(BaseModel):
-    password: str = Field(min_length=10, max_length=4096)
+    password: str = Field(min_length=12, max_length=4096)
 
 
 def utc_now() -> str:
@@ -112,6 +125,7 @@ def init_db() -> None:
 
             CREATE TABLE IF NOT EXISTS sessions (
               token_hash TEXT PRIMARY KEY,
+              csrf_token_hash TEXT,
               user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
               expires_at TEXT NOT NULL,
               created_at TEXT NOT NULL
@@ -137,6 +151,7 @@ def init_db() -> None:
             );
             """
         )
+        ensure_column(conn, "sessions", "csrf_token_hash", "TEXT")
         ensure_column(conn, "downloads", "file_size", "INTEGER")
         ensure_column(conn, "downloads", "settings_json", "TEXT NOT NULL DEFAULT '{}'")
     ensure_initial_admin()
@@ -165,6 +180,9 @@ def ensure_initial_admin() -> None:
                 "No initial admin password configured. Set FIRST_ADMIN_PASSWORD_FILE "
                 "or FIRST_ADMIN_PASSWORD before the first start."
             )
+        password_error = password_strength_error(password, username)
+        if password_error:
+            raise RuntimeError(f"Initial admin password rejected: {password_error}")
 
         conn.execute(
             "INSERT INTO users (username, password_hash, is_admin, created_at) VALUES (?, ?, 1, ?)",
@@ -195,8 +213,101 @@ def verify_password(password: str, stored: str) -> bool:
         return False
 
 
+DUMMY_PASSWORD_HASH = hash_password(secrets.token_urlsafe(32))
+
+
 def hash_token(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def cookie_kwargs(http_only: bool) -> dict[str, Any]:
+    return {
+        "httponly": http_only,
+        "samesite": COOKIE_SAMESITE,
+        "secure": COOKIE_SECURE,
+        "path": "/",
+    }
+
+
+def set_auth_cookies(response: Response, session_token: str, csrf_token: str) -> None:
+    max_age = SESSION_DAYS * 24 * 60 * 60
+    response.set_cookie(
+        SESSION_COOKIE_NAME,
+        session_token,
+        max_age=max_age,
+        **cookie_kwargs(http_only=True),
+    )
+    response.set_cookie(
+        CSRF_COOKIE_NAME,
+        csrf_token,
+        max_age=max_age,
+        **cookie_kwargs(http_only=False),
+    )
+
+
+def delete_auth_cookies(response: Response) -> None:
+    response.delete_cookie(SESSION_COOKIE_NAME, **cookie_kwargs(http_only=True))
+    response.delete_cookie(CSRF_COOKIE_NAME, **cookie_kwargs(http_only=False))
+    response.delete_cookie(LEGACY_SESSION_COOKIE_NAME, path="/")
+
+
+def password_strength_error(password: str, username: str | None = None) -> str | None:
+    if len(password) < MIN_PASSWORD_LENGTH:
+        return f"Password must be at least {MIN_PASSWORD_LENGTH} characters"
+    lowered = password.lower()
+    if username and username.lower() in lowered:
+        return "Password must not contain the username"
+    common = {"password", "admin", "pullora", "changeme", "letmein", "qwerty", "123456"}
+    if lowered in common or any(item in lowered for item in ("password", "123456", "qwerty")):
+        return "Password is too common"
+    classes = sum(
+        [
+            any(char.islower() for char in password),
+            any(char.isupper() for char in password),
+            any(char.isdigit() for char in password),
+            any(not char.isalnum() for char in password),
+        ]
+    )
+    if classes < 3:
+        return "Password must use at least three character classes"
+    return None
+
+
+def validate_password_strength(password: str, username: str | None = None) -> None:
+    error = password_strength_error(password, username)
+    if error:
+        raise HTTPException(status_code=400, detail=error)
+
+
+def client_key(request: Request, username: str) -> str:
+    host = request.client.host if request.client else "unknown"
+    return f"{host}:{username.strip().lower()[:80]}"
+
+
+def prune_failures(now: float, attempts: list[float]) -> list[float]:
+    return [timestamp for timestamp in attempts if now - timestamp < LOGIN_WINDOW_SECONDS]
+
+
+def assert_login_allowed(request: Request, username: str) -> None:
+    key = client_key(request, username)
+    now = time.time()
+    with login_attempts_lock:
+        attempts = prune_failures(now, login_failures.get(key, []))
+        login_failures[key] = attempts
+        if len(attempts) >= LOGIN_MAX_FAILURES:
+            raise HTTPException(status_code=429, detail="Too many login attempts. Try again later.")
+
+
+def record_login_failure(request: Request, username: str) -> None:
+    key = client_key(request, username)
+    now = time.time()
+    with login_attempts_lock:
+        login_failures[key] = prune_failures(now, login_failures.get(key, [])) + [now]
+
+
+def clear_login_failures(request: Request, username: str) -> None:
+    with login_attempts_lock:
+        login_failures.pop(client_key(request, username), None)
 
 
 def user_public(row: sqlite3.Row) -> dict[str, Any]:
@@ -208,7 +319,12 @@ def user_public(row: sqlite3.Row) -> dict[str, Any]:
     }
 
 
-def get_current_user(session: str | None = Cookie(default=None)) -> dict[str, Any]:
+def session_token_from_request(request: Request) -> str | None:
+    return request.cookies.get(SESSION_COOKIE_NAME) or request.cookies.get(LEGACY_SESSION_COOKIE_NAME)
+
+
+def get_current_user(request: Request) -> dict[str, Any]:
+    session = session_token_from_request(request)
     if not session:
         raise HTTPException(status_code=401, detail="Not authenticated")
 
@@ -225,6 +341,41 @@ def get_current_user(session: str | None = Cookie(default=None)) -> dict[str, An
         if not row:
             raise HTTPException(status_code=401, detail="Session expired")
         return user_public(row)
+
+
+def require_csrf(request: Request, x_csrf_token: str | None = Header(default=None)) -> None:
+    session = session_token_from_request(request)
+    if not session or not x_csrf_token:
+        raise HTTPException(status_code=403, detail="Security token missing")
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT csrf_token_hash FROM sessions WHERE token_hash = ? AND expires_at > ?",
+            (hash_token(session), utc_now()),
+        ).fetchone()
+    csrf_hash = row["csrf_token_hash"] if row else None
+    if not csrf_hash or not hmac.compare_digest(hash_token(x_csrf_token), csrf_hash):
+        raise HTTPException(status_code=403, detail="Security token invalid")
+
+
+def ensure_csrf_cookie(request: Request, response: Response) -> None:
+    session = session_token_from_request(request)
+    if not session:
+        return
+    if request.cookies.get(CSRF_COOKIE_NAME):
+        return
+    csrf_token = secrets.token_urlsafe(32)
+    with connect() as conn:
+        result = conn.execute(
+            "UPDATE sessions SET csrf_token_hash = ? WHERE token_hash = ? AND expires_at > ?",
+            (hash_token(csrf_token), hash_token(session), utc_now()),
+        )
+    if result.rowcount:
+        response.set_cookie(
+            CSRF_COOKIE_NAME,
+            csrf_token,
+            max_age=SESSION_DAYS * 24 * 60 * 60,
+            **cookie_kwargs(http_only=False),
+        )
 
 
 def require_admin(user: dict[str, Any] = Depends(get_current_user)) -> dict[str, Any]:
@@ -863,48 +1014,71 @@ def index() -> FileResponse:
 
 
 @app.get("/api/health")
-def health() -> dict[str, Any]:
+def health(_: dict[str, Any] = Depends(get_current_user)) -> dict[str, Any]:
     return system_info()
 
 
 @app.post("/api/login")
-def login(payload: LoginPayload, response: Response) -> dict[str, Any]:
+def login(payload: LoginPayload, request: Request, response: Response) -> dict[str, Any]:
+    username = payload.username.strip()
+    assert_login_allowed(request, username)
     with connect() as conn:
+        conn.execute("DELETE FROM sessions WHERE expires_at <= ?", (utc_now(),))
         row = conn.execute(
             "SELECT * FROM users WHERE username = ? COLLATE NOCASE",
-            (payload.username.strip(),),
+            (username,),
         ).fetchone()
-        if not row or not verify_password(payload.password, row["password_hash"]):
+        stored_hash = row["password_hash"] if row else DUMMY_PASSWORD_HASH
+        if not verify_password(payload.password, stored_hash) or not row:
+            record_login_failure(request, username)
             raise HTTPException(status_code=401, detail="Invalid username or password")
 
         token = secrets.token_urlsafe(40)
+        csrf_token = secrets.token_urlsafe(32)
         expires_at = datetime.now(timezone.utc) + timedelta(days=SESSION_DAYS)
         conn.execute(
-            "INSERT INTO sessions (token_hash, user_id, expires_at, created_at) VALUES (?, ?, ?, ?)",
-            (hash_token(token), row["id"], expires_at.isoformat(), utc_now()),
+            "INSERT INTO sessions (token_hash, csrf_token_hash, user_id, expires_at, created_at) VALUES (?, ?, ?, ?, ?)",
+            (hash_token(token), hash_token(csrf_token), row["id"], expires_at.isoformat(), utc_now()),
         )
-        response.set_cookie(
-            "session",
-            token,
-            max_age=SESSION_DAYS * 24 * 60 * 60,
-            httponly=True,
-            samesite="lax",
-            secure=COOKIE_SECURE,
+        conn.execute(
+            """
+            DELETE FROM sessions
+            WHERE user_id = ?
+              AND token_hash NOT IN (
+                SELECT token_hash FROM sessions
+                WHERE user_id = ?
+                ORDER BY created_at DESC
+                LIMIT 10
+              )
+            """,
+            (row["id"], row["id"]),
         )
+        clear_login_failures(request, username)
+        set_auth_cookies(response, token, csrf_token)
         return {"user": user_public(row)}
 
 
 @app.post("/api/logout")
-def logout(response: Response, session: str | None = Cookie(default=None)) -> dict[str, str]:
+def logout(
+    request: Request,
+    response: Response,
+    _csrf: None = Depends(require_csrf),
+) -> dict[str, str]:
+    session = session_token_from_request(request)
     if session:
         with connect() as conn:
             conn.execute("DELETE FROM sessions WHERE token_hash = ?", (hash_token(session),))
-    response.delete_cookie("session")
+    delete_auth_cookies(response)
     return {"status": "ok"}
 
 
 @app.get("/api/me")
-def me(user: dict[str, Any] = Depends(get_current_user)) -> dict[str, Any]:
+def me(
+    request: Request,
+    response: Response,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> dict[str, Any]:
+    ensure_csrf_cookie(request, response)
     return {"user": user}
 
 
@@ -921,6 +1095,7 @@ def downloads(user: dict[str, Any] = Depends(get_current_user)) -> dict[str, Any
 @app.post("/api/downloads")
 def create_download(
     payload: DownloadPayload,
+    _csrf: None = Depends(require_csrf),
     user: dict[str, Any] = Depends(get_current_user),
 ) -> dict[str, Any]:
     url = validate_url(payload.url)
@@ -941,7 +1116,11 @@ def create_download(
 
 
 @app.post("/api/downloads/{download_id}/cancel")
-def cancel_download(download_id: int, user: dict[str, Any] = Depends(get_current_user)) -> dict[str, str]:
+def cancel_download(
+    download_id: int,
+    _csrf: None = Depends(require_csrf),
+    user: dict[str, Any] = Depends(get_current_user),
+) -> dict[str, str]:
     with connect() as conn:
         row = conn.execute(
             "SELECT * FROM downloads WHERE id = ? AND created_by = ?",
@@ -963,7 +1142,11 @@ def cancel_download(download_id: int, user: dict[str, Any] = Depends(get_current
 
 
 @app.delete("/api/downloads/{download_id}")
-def delete_download(download_id: int, user: dict[str, Any] = Depends(get_current_user)) -> dict[str, str]:
+def delete_download(
+    download_id: int,
+    _csrf: None = Depends(require_csrf),
+    user: dict[str, Any] = Depends(get_current_user),
+) -> dict[str, str]:
     with connect() as conn:
         row = conn.execute(
             "SELECT status FROM downloads WHERE id = ? AND created_by = ?",
@@ -1045,10 +1228,15 @@ def list_users(_: dict[str, Any] = Depends(require_admin)) -> dict[str, Any]:
 
 
 @app.post("/api/admin/users")
-def create_user(payload: UserCreatePayload, _: dict[str, Any] = Depends(require_admin)) -> dict[str, Any]:
+def create_user(
+    payload: UserCreatePayload,
+    _csrf: None = Depends(require_csrf),
+    _: dict[str, Any] = Depends(require_admin),
+) -> dict[str, Any]:
     username = payload.username.strip()
     if not re.fullmatch(r"[A-Za-z0-9_.-]{3,80}", username):
         raise HTTPException(status_code=400, detail="Use letters, numbers, dots, dashes or underscores")
+    validate_password_strength(payload.password, username)
     try:
         with connect() as conn:
             cursor = conn.execute(
@@ -1065,8 +1253,14 @@ def create_user(payload: UserCreatePayload, _: dict[str, Any] = Depends(require_
 def reset_password(
     user_id: int,
     payload: PasswordPayload,
+    _csrf: None = Depends(require_csrf),
     _: dict[str, Any] = Depends(require_admin),
 ) -> dict[str, str]:
+    with connect() as conn:
+        target = conn.execute("SELECT username FROM users WHERE id = ?", (user_id,)).fetchone()
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    validate_password_strength(payload.password, target["username"])
     with connect() as conn:
         result = conn.execute(
             "UPDATE users SET password_hash = ? WHERE id = ?",
@@ -1078,7 +1272,11 @@ def reset_password(
 
 
 @app.delete("/api/admin/users/{user_id}")
-def delete_user(user_id: int, admin: dict[str, Any] = Depends(require_admin)) -> dict[str, str]:
+def delete_user(
+    user_id: int,
+    _csrf: None = Depends(require_csrf),
+    admin: dict[str, Any] = Depends(require_admin),
+) -> dict[str, str]:
     if user_id == admin["id"]:
         raise HTTPException(status_code=400, detail="You cannot delete your own account")
     with connect() as conn:
@@ -1092,9 +1290,53 @@ def delete_user(user_id: int, admin: dict[str, Any] = Depends(require_admin)) ->
     return {"status": "deleted"}
 
 
+def same_origin(request: Request, value: str | None) -> bool:
+    if not value:
+        return True
+    parsed = urlparse(value)
+    request_url = request.url
+    return (
+        parsed.scheme == request_url.scheme
+        and parsed.hostname == request_url.hostname
+        and (parsed.port or default_port(parsed.scheme)) == (request_url.port or default_port(request_url.scheme))
+    )
+
+
+def default_port(scheme: str) -> int | None:
+    if scheme == "http":
+        return 80
+    if scheme == "https":
+        return 443
+    return None
+
+
 @app.middleware("http")
-async def no_store_api(request: Request, call_next: Any) -> Response:
+async def security_headers(request: Request, call_next: Any) -> Response:
+    if request.method not in {"GET", "HEAD", "OPTIONS"} and request.url.path.startswith("/api/"):
+        origin = request.headers.get("origin")
+        referer = request.headers.get("referer")
+        if not same_origin(request, origin) or (not origin and not same_origin(request, referer)):
+            return JSONResponse({"detail": "Cross-origin request rejected"}, status_code=403)
+
     response = await call_next(request)
-    if request.url.path.startswith("/api/") or request.url.path.startswith("/static/"):
+    if request.url.path == "/" or request.url.path.startswith("/api/") or request.url.path.startswith("/static/"):
         response.headers["Cache-Control"] = "no-store"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=(), payment=()"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; "
+        "script-src 'self'; "
+        "style-src 'self'; "
+        "img-src 'self' data:; "
+        "font-src 'self'; "
+        "connect-src 'self'; "
+        "object-src 'none'; "
+        "base-uri 'none'; "
+        "frame-ancestors 'none'; "
+        "form-action 'self'"
+    )
+    if COOKIE_SECURE:
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     return response

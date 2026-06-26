@@ -14,6 +14,7 @@ This app was created with AI assistance. Feature requests are unlikely to be han
 - login page with session cookie authentication
 - first user is created as admin from a Docker secret on first start
 - admins can create users, reset passwords, and delete users
+- hardened login with server-side sessions, CSRF protection, secure cookie options, and rate limiting
 - user-scoped download history: users only see their own queue entries
 - inline download options inside the New Download card
 - download queue for video and audio
@@ -56,19 +57,19 @@ Both files use the published image `ghcr.io/maroishiku/pullora:latest`. The imag
    On Windows:
 
    ```powershell
-   Set-Content -Path .\secrets\admin_password.txt -Value "a-long-initial-admin-password"
+   Set-Content -Path .\secrets\admin_password.txt -Value "Use-A-Long-Initial-Key-2026!"
    ```
 
    On Linux/macOS:
 
    ```bash
-   printf '%s\n' 'a-long-initial-admin-password' > secrets/admin_password.txt
+   printf '%s\n' 'Use-A-Long-Initial-Key-2026!' > secrets/admin_password.txt
    ```
 
    On ZimaOS/Linux:
 
    ```bash
-   printf '%s\n' 'a-long-initial-admin-password' > /media/ZimaOS-HD/AppData/pullora/secrets/admin_password.txt
+   printf '%s\n' 'Use-A-Long-Initial-Key-2026!' > /media/ZimaOS-HD/AppData/pullora/secrets/admin_password.txt
    ```
 
 3. Start the container from a terminal:
@@ -98,6 +99,8 @@ Both files use the published image `ghcr.io/maroishiku/pullora:latest`. The imag
    ```
 
 After the first start, the admin user is stored in SQLite. Changing the secret file later does not change existing passwords automatically; use the admin sheet for that.
+
+Passwords must be at least 12 characters, must not contain the username, must not be common, and must use at least three character classes. For HTTPS deployments, set `APP_COOKIE_SECURE=true` so Pullora uses a `__Host-` session cookie and HSTS.
 
 ## Docker Compose
 
@@ -174,7 +177,7 @@ If no user exists on first start and the secret is missing or still set to `chan
 ```bash
 python -m venv .venv
 .\.venv\Scripts\pip install -r requirements.txt
-$env:FIRST_ADMIN_PASSWORD="dev-password-with-10-chars"
+$env:FIRST_ADMIN_PASSWORD="Use-A-Local-Dev-Key-2026!"
 .\.venv\Scripts\uvicorn app.main:app --reload --host 127.0.0.1 --port 8080
 ```
 
