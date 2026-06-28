@@ -6,12 +6,19 @@ const state = {
   poller: null,
 };
 
-const THEME_KEY = "pullora-theme";
-const MODE_KEY = "pullora-mode";
+const APP_ID = "pulliku";
+const APP_NAME = "Pulliku";
+const APP_SUBTITLE = "Media Download Interface";
+const THEME_KEY = `${APP_ID}-theme`;
+const MODE_KEY = `${APP_ID}-mode`;
+const LEGACY_PULLORA_THEME_KEY = "pullora-theme";
+const LEGACY_PULLORA_MODE_KEY = "pullora-mode";
 const LEGACY_THEME_KEY = "ytdlp-client-theme";
 const LEGACY_MODE_KEY = "ytdlp-client-mode";
-const CSRF_COOKIE = "pullora_csrf";
+const CSRF_COOKIE = "pulliku_csrf";
 const systemScheme = window.matchMedia("(prefers-color-scheme: dark)");
+const THEMES = ["lavender", "mint", "sky", "amber", "rose", "graphite"];
+const MODES = ["system", "light", "dark"];
 
 const compatibleVideoCodecs = {
   auto: ["auto", "h264", "h265", "av1", "vp9"],
@@ -33,20 +40,24 @@ function cookieValue(name) {
 }
 
 function migrateThemeStorage() {
-  if (!localStorage.getItem(THEME_KEY) && localStorage.getItem(LEGACY_THEME_KEY)) {
-    localStorage.setItem(THEME_KEY, localStorage.getItem(LEGACY_THEME_KEY));
+  const oldTheme = localStorage.getItem(LEGACY_PULLORA_THEME_KEY) || localStorage.getItem(LEGACY_THEME_KEY);
+  const oldMode = localStorage.getItem(LEGACY_PULLORA_MODE_KEY) || localStorage.getItem(LEGACY_MODE_KEY);
+  if (!localStorage.getItem(THEME_KEY) && oldTheme) {
+    localStorage.setItem(THEME_KEY, oldTheme);
   }
-  if (!localStorage.getItem(MODE_KEY) && localStorage.getItem(LEGACY_MODE_KEY)) {
-    localStorage.setItem(MODE_KEY, localStorage.getItem(LEGACY_MODE_KEY));
+  if (!localStorage.getItem(MODE_KEY) && oldMode) {
+    localStorage.setItem(MODE_KEY, oldMode);
   }
 }
 
 function savedTheme() {
-  return localStorage.getItem(THEME_KEY) || "lavender";
+  const theme = localStorage.getItem(THEME_KEY);
+  return THEMES.includes(theme) ? theme : "lavender";
 }
 
 function savedMode() {
-  return localStorage.getItem(MODE_KEY) || "system";
+  const mode = localStorage.getItem(MODE_KEY);
+  return MODES.includes(mode) ? mode : "system";
 }
 
 function resolvedMode(mode = savedMode()) {
@@ -56,10 +67,48 @@ function resolvedMode(mode = savedMode()) {
 function applyTheme() {
   const theme = savedTheme();
   const mode = savedMode();
+  const resolved = resolvedMode(mode);
   document.documentElement.dataset.theme = theme;
-  document.documentElement.dataset.mode = resolvedMode(mode);
-  $("#themeSelect").value = theme;
-  $("#modeSelect").value = mode;
+  document.documentElement.dataset.mode = mode;
+  document.documentElement.dataset.resolvedMode = resolved;
+  document.documentElement.style.colorScheme = resolved;
+  updateThemeControls(theme, mode);
+  requestAnimationFrame(() => {
+    const color = getComputedStyle(document.documentElement).getPropertyValue("--color-background").trim();
+    document.querySelector('meta[name="theme-color"]')?.setAttribute("content", color || (resolved === "dark" ? "#101316" : "#FFFBFF"));
+  });
+}
+
+function updateThemeControls(theme = savedTheme(), mode = savedMode()) {
+  $$("[data-theme-choice]").forEach((button) => {
+    const selected = button.dataset.themeChoice === theme;
+    button.classList.toggle("is-selected", selected);
+    button.setAttribute("aria-pressed", String(selected));
+  });
+  $$("[data-mode-choice]").forEach((button) => {
+    const selected = button.dataset.modeChoice === mode;
+    button.setAttribute("aria-selected", String(selected));
+  });
+}
+
+async function injectIcons() {
+  const target = $("#iconSprite");
+  if (!target) return;
+  try {
+    const response = await fetch("/static/icons/psu-icons.svg", { credentials: "same-origin" });
+    target.innerHTML = await response.text();
+  } catch {
+    target.innerHTML = "";
+  }
+}
+
+function initials(name) {
+  return String(name || APP_NAME)
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() || "")
+    .join("") || "PU";
 }
 
 function escapeHtml(value) {
@@ -171,7 +220,7 @@ function downloadSettingsSummary() {
 
 function renderOptionsSummary() {
   $("#optionsSummary").innerHTML = downloadSettingsSummary()
-    .map((item) => `<span class="chip">${escapeHtml(item)}</span>`)
+    .map((item) => `<span class="psu-chip">${escapeHtml(item)}</span>`)
     .join("");
 }
 
@@ -220,17 +269,39 @@ function resetDownloadOptions() {
 }
 
 function showLogin() {
+  $("#setupView").hidden = true;
   $("#loginView").hidden = false;
   $("#appView").hidden = true;
   $("#userMenu").hidden = true;
   if (state.poller) clearInterval(state.poller);
 }
 
+function showSetup(configured, missingConfig = "") {
+  $("#setupView").hidden = false;
+  $("#loginView").hidden = true;
+  $("#appView").hidden = true;
+  $("#userMenu").hidden = true;
+  $("#setupRegisterWindow").hidden = !configured;
+  $("#setupErrorWindow").hidden = configured;
+  $("#setupMissingConfig").textContent = missingConfig || "ISHIKU_SETUP_SECRET_FILE";
+  if (state.poller) clearInterval(state.poller);
+  if (configured) {
+    requestAnimationFrame(() => $("#setupSecret")?.focus());
+  }
+}
+
 function showApp() {
+  $("#setupView").hidden = true;
   $("#loginView").hidden = true;
   $("#appView").hidden = false;
-  $("#currentUser").textContent = state.user?.username || "";
-  $("#userMenuTitle").textContent = state.user?.username || "Pullora";
+  const name = state.user?.display_name || state.user?.username || APP_NAME;
+  const avatar = initials(name);
+  $("#currentUser").textContent = name;
+  $("#avatarInitials").textContent = avatar;
+  $("#accountAvatar").textContent = avatar;
+  $("#accountName").textContent = name;
+  $("#accountRole").textContent = state.user?.is_admin ? "Administrator" : "Local account";
+  $("#userMenuTitle").textContent = APP_NAME;
   $("#adminTools").hidden = !state.user?.is_admin;
 }
 
@@ -243,17 +314,22 @@ function renderAboutInfo() {
   const payload = state.systemInfo || {};
   const shortSha = payload.build_sha ? payload.build_sha.slice(0, 12) : "dev";
   const rows = [
-    ["App Name", "Pullora"],
-    ["Pullora version", payload.version || "0.1.0"],
+    ["App Name", APP_NAME],
+    ["Interface", APP_SUBTITLE],
+    ["Pulliku version", payload.version || "0.1.0"],
     ["GitHub SHA", shortSha],
     ["Build date", payload.build_date || "unknown"],
+    ["Data directory", payload.data_dir || "unknown"],
+    ["Database status", payload.database_status || "unknown"],
+    ["Setup state", payload.setup_state || "unknown"],
+    ["Health status", payload.status || "unknown"],
+    ["Log level", payload.log_level || "info"],
     ["yt-dlp version", payload.yt_dlp_version || "unknown"],
     ["Public IP", payload.public_ip || "unavailable"],
     ["Impersonation", payload.curl_cffi_available ? "available" : "missing"],
     ["Deno", payload.deno_version || "unavailable"],
     ["yt-dlp-ejs", payload.yt_dlp_ejs_version || "unavailable"],
     ["ffmpeg", payload.ffmpeg_version || "unavailable"],
-    ["Server", payload.status || "unknown"],
     ["Diagnostics", "No client-side errors recorded"],
     ["Logs", "Server logs are available through Docker"],
   ];
@@ -293,7 +369,7 @@ function renderQueueStats() {
     `Completed ${counts.completed || 0}`,
     `Failed ${counts.failed || 0}`,
   ]
-    .map((item) => `<span class="chip">${escapeHtml(item)}</span>`)
+    .map((item) => `<span class="psu-chip">${escapeHtml(item)}</span>`)
     .join("");
 }
 
@@ -301,7 +377,15 @@ function renderDownloads() {
   const target = $("#downloadList");
   renderQueueStats();
   if (!state.downloads.length) {
-    target.innerHTML = '<div class="empty-state">No downloads</div>';
+    target.innerHTML = `
+      <div class="empty-state">
+        <img src="/static/pulliku-logo.png" alt="" />
+        <div>
+          <strong>No downloads</strong>
+          <div class="meta">Add a URL to start the first Pulliku queue item.</div>
+        </div>
+      </div>
+    `;
     return;
   }
 
@@ -338,8 +422,8 @@ function renderDownloads() {
                   </a>`
                 : ""
             }
-            ${canCancel ? `<button class="button tonal" type="button" data-action="cancel" data-id="${item.id}">Stop</button>` : ""}
-            ${canDelete ? `<button class="button text" type="button" data-action="delete" data-id="${item.id}">Remove</button>` : ""}
+            ${canCancel ? `<button class="psu-button psu-button--tonal" type="button" data-action="cancel" data-id="${item.id}">Stop</button>` : ""}
+            ${canDelete ? `<button class="psu-button psu-button--text" type="button" data-action="delete" data-id="${item.id}">Remove</button>` : ""}
           </div>
         </article>
       `;
@@ -364,10 +448,10 @@ function renderUsers() {
             </div>
           </div>
           <div class="user-actions">
-            <button class="button text" type="button" data-user-action="password" data-id="${user.id}">Password</button>
+            <button class="psu-button psu-button--text" type="button" data-user-action="password" data-id="${user.id}">Password</button>
             ${
               user.id !== state.user.id
-                ? `<button class="button text" type="button" data-user-action="delete" data-id="${user.id}">Delete</button>`
+                ? `<button class="psu-button psu-button--text" type="button" data-user-action="delete" data-id="${user.id}">Delete</button>`
                 : ""
             }
           </div>
@@ -391,7 +475,18 @@ function closeUserMenu() {
 async function boot() {
   migrateThemeStorage();
   applyTheme();
+  await injectIcons();
   updateDownloadOptions();
+  try {
+    const setup = await api("/api/setup/status");
+    if (setup.setup_required) {
+      showSetup(Boolean(setup.setup_configured), setup.missing_config);
+      return;
+    }
+  } catch (error) {
+    showSetup(false, error.message || "ISHIKU_SETUP_SECRET_FILE");
+    return;
+  }
   try {
     const payload = await api("/api/me");
     state.user = payload.user;
@@ -402,6 +497,38 @@ async function boot() {
     showLogin();
   }
 }
+
+$("#setupHelpButton").addEventListener("click", () => {
+  $("#setupHelp").hidden = !$("#setupHelp").hidden;
+});
+
+$("#setupForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const setupForm = event.currentTarget;
+  $("#setupError").textContent = "";
+  const submitButton = setupForm.querySelector("button[type='submit']");
+  submitButton.disabled = true;
+  const form = new FormData(setupForm);
+  try {
+    await api("/api/setup/register", {
+      method: "POST",
+      body: JSON.stringify({
+        setup_secret: form.get("setup_secret"),
+        display_name: form.get("display_name"),
+        username: form.get("username"),
+        email: form.get("email") || "",
+        password: form.get("password"),
+        password_confirm: form.get("password_confirm"),
+      }),
+    });
+    setupForm.reset();
+    showLogin();
+  } catch (error) {
+    $("#setupError").textContent = error.message;
+  } finally {
+    submitButton.disabled = false;
+  }
+});
 
 $("#loginForm").addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -505,17 +632,25 @@ document.addEventListener("keydown", (event) => {
   }
 });
 
-$("#themeSelect").addEventListener("change", (event) => {
-  localStorage.setItem(THEME_KEY, event.target.value);
-  applyTheme();
+$$("[data-theme-choice]").forEach((button) => {
+  button.addEventListener("click", () => {
+    localStorage.setItem(THEME_KEY, button.dataset.themeChoice);
+    applyTheme();
+  });
 });
-$("#modeSelect").addEventListener("change", (event) => {
-  localStorage.setItem(MODE_KEY, event.target.value);
-  applyTheme();
+$$("[data-mode-choice]").forEach((button) => {
+  button.addEventListener("click", () => {
+    localStorage.setItem(MODE_KEY, button.dataset.modeChoice);
+    applyTheme();
+  });
 });
 systemScheme.addEventListener("change", () => {
   if (savedMode() === "system") applyTheme();
 });
+
+window.addEventListener("scroll", () => {
+  $("[data-psu-app-header]")?.classList.toggle("is-scrolled", window.scrollY > 4);
+}, { passive: true });
 
 $("#copyDebugButton").addEventListener("click", async () => {
   const payload = JSON.stringify(state.systemInfo || {}, null, 2);

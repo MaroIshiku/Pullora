@@ -1,48 +1,56 @@
-name: pullora
+name: pulliku
 services:
-  pullora:
-    image: ghcr.io/maroishiku/pullora:latest
-    container_name: pullora
+  pulliku:
+    image: ghcr.io/maroishiku/pulliku:latest
+    container_name: pulliku
     restart: unless-stopped
     ports:
       - target: 8080
         published: "8180"
         protocol: tcp
     environment:
-      APP_DATA_DIR: /data
-      DOWNLOAD_DIR: /downloads
-      FIRST_ADMIN_USERNAME: admin
-      FIRST_ADMIN_PASSWORD_FILE: /run/secrets/first_admin_password
-      SESSION_DAYS: 14
       TZ: Europe/Berlin
+      ISHIKU_APP_URL: http://localhost:8180
+      ISHIKU_BASE_PATH: /
+      ISHIKU_DATA_DIR: /data
+      DOWNLOAD_DIR: /downloads
+      ISHIKU_SETUP_SECRET_FILE: /run/secrets/ishiku_setup_secret
+      ISHIKU_LOG_LEVEL: info
+      SESSION_DAYS: 14
     volumes:
       - type: bind
-        source: /media/ZimaOS-HD/AppData/pullora/data
+        source: /media/ZimaOS-HD/AppData/pulliku/data
         target: /data
       - type: bind
-        source: /media/ZimaOS-HD/AppData/pullora/downloads
+        source: /media/ZimaOS-HD/AppData/pulliku/downloads
         target: /downloads
     secrets:
-      - first_admin_password
+      - ishiku_setup_secret
     network_mode: bridge
     privileged: false
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
     labels:
-      icon: https://raw.githubusercontent.com/MaroIshiku/Pullora/main/app/static/pullora-logo.png
+      icon: https://raw.githubusercontent.com/MaroIshiku/pulliku/main/app/static/pulliku-logo.png
 
 secrets:
-  first_admin_password:
-    file: /media/ZimaOS-HD/AppData/pullora/secrets/admin_password.txt
+  ishiku_setup_secret:
+    file: /media/ZimaOS-HD/AppData/pulliku/secrets/setup_secret.txt
 
 x-casaos:
   author: self
   category: self
   hostname: ""
-  icon: https://raw.githubusercontent.com/MaroIshiku/Pullora/main/app/static/pullora-logo.png
+  icon: https://raw.githubusercontent.com/MaroIshiku/pulliku/main/app/static/pulliku-logo.png
   index: /
   is_uncontrolled: false
   port_map: "8180"
   scheme: http
-  store_app_id: pullora
+  store_app_id: pulliku
   title:
-    custom: Pullora
-    en_us: Pullora
+    custom: Pulliku
+    en_us: Pulliku

@@ -1,252 +1,336 @@
 <!doctype html>
-<html lang="en" data-theme="lavender" data-mode="dark">
+<html lang="de" data-theme="lavender" data-mode="system" data-resolved-mode="light">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Pullora</title>
-    <link rel="icon" href="/static/pullora-logo.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#FFFBFF" />
+    <meta name="application-name" content="Pulliku" />
+    <meta name="apple-mobile-web-app-title" content="Pulliku" />
+    <title>Pulliku - Media Download Interface</title>
+    <link rel="icon" href="/static/pulliku-logo.png" />
     <link rel="stylesheet" href="/static/style.css" />
   </head>
   <body>
-    <main id="loginView" class="login-shell" hidden>
-      <section class="login-card surface-card">
-        <img class="app-logo large" src="/static/pullora-logo.png" alt="" />
-        <div>
-          <p class="overline">Self-hosted</p>
-          <h1>Pullora</h1>
-          <p class="subtle">Self-hosted media downloader</p>
+    <div id="iconSprite" aria-hidden="true"></div>
+
+    <main id="setupView" class="psu-setup-screen" hidden>
+      <section id="setupRegisterWindow" class="psu-register-window">
+        <div class="psu-setup-brand">
+          <span class="psu-setup-logo">
+            <img src="/static/pulliku-logo.png" alt="" />
+          </span>
+          <div>
+            <p class="eyebrow">First-Run Setup</p>
+            <h1 class="psu-setup-title">Admin einrichten</h1>
+            <p class="psu-setup-subtitle">Erstelle den ersten Adminaccount fuer Pulliku.</p>
+          </div>
         </div>
-        <form id="loginForm" class="stack">
-          <label>
-            Username
-            <input name="username" autocomplete="username" required />
+        <form id="setupForm" class="psu-form-stack">
+          <label class="psu-field">
+            <span class="psu-label">Setup-Secret</span>
+            <input id="setupSecret" class="psu-input" name="setup_secret" type="password" autocomplete="one-time-code" required />
           </label>
-          <label>
-            Password
-            <input name="password" type="password" autocomplete="current-password" required />
+          <label class="psu-field">
+            <span class="psu-label">Anzeigename</span>
+            <input class="psu-input" name="display_name" autocomplete="name" required />
           </label>
-          <button class="button primary" type="submit">Sign in</button>
-          <p id="loginError" class="error" role="alert"></p>
+          <label class="psu-field">
+            <span class="psu-label">Admin-Benutzername</span>
+            <input class="psu-input" name="username" autocomplete="username" required minlength="3" />
+          </label>
+          <label class="psu-field">
+            <span class="psu-label">E-Mail optional</span>
+            <input class="psu-input" name="email" type="email" autocomplete="email" />
+          </label>
+          <label class="psu-field">
+            <span class="psu-label">Admin-Passwort</span>
+            <input class="psu-input" name="password" type="password" autocomplete="new-password" required minlength="12" />
+          </label>
+          <label class="psu-field">
+            <span class="psu-label">Passwort wiederholen</span>
+            <input class="psu-input" name="password_confirm" type="password" autocomplete="new-password" required minlength="12" />
+          </label>
+          <div class="psu-password-requirements">
+            Passwoerter brauchen mindestens 12 Zeichen, drei Zeichenklassen und muessen sich vom Setup-Secret, Benutzernamen und App-Namen unterscheiden.
+          </div>
+          <div class="psu-setup-actions">
+            <button class="psu-button psu-button--tonal" type="button" id="setupHelpButton">Setup-Hilfe</button>
+            <button class="psu-button psu-button--filled" type="submit">Adminaccount erstellen</button>
+          </div>
+          <p id="setupError" class="psu-field-error" role="alert"></p>
+          <p id="setupHelp" class="psu-setup-footnote" hidden>Das Setup-Secret steht in deiner Docker-Secret-Datei oder in der Umgebungsvariable ISHIKU_SETUP_SECRET.</p>
+        </form>
+      </section>
+
+      <section id="setupErrorWindow" class="psu-setup-error-window" hidden>
+        <div class="psu-setup-brand">
+          <span class="psu-setup-logo">
+            <img src="/static/pulliku-logo.png" alt="" />
+          </span>
+          <div>
+            <p class="eyebrow">Setup blockiert</p>
+            <h1 class="psu-setup-title">Setup-Secret fehlt</h1>
+            <p class="psu-setup-subtitle">Pulliku braucht ein Setup-Secret, bevor der erste Admin erstellt werden kann.</p>
+          </div>
+        </div>
+        <div class="psu-technical-card">
+          Fehlende Konfiguration: <span id="setupMissingConfig" class="psu-technical-value">ISHIKU_SETUP_SECRET_FILE</span>
+        </div>
+      </section>
+    </main>
+
+    <main id="loginView" class="psu-setup-screen" hidden>
+      <section class="psu-auth-window">
+        <div class="psu-setup-brand">
+          <span class="psu-setup-logo">
+            <img src="/static/pulliku-logo.png" alt="" />
+          </span>
+          <div>
+            <p class="eyebrow">Media Download Interface</p>
+            <h1 class="psu-setup-title">Pulliku</h1>
+            <p class="psu-setup-subtitle">Self-hosted downloads with a calm queue.</p>
+          </div>
+        </div>
+        <form id="loginForm" class="psu-form-stack">
+          <label class="psu-field">
+            <span class="psu-label">Username</span>
+            <input class="psu-input" name="username" autocomplete="username" required />
+          </label>
+          <label class="psu-field">
+            <span class="psu-label">Password</span>
+            <input class="psu-input" name="password" type="password" autocomplete="current-password" required />
+          </label>
+          <button class="psu-button psu-button--filled psu-button--full" type="submit">Sign in</button>
+          <p id="loginError" class="psu-field-error" role="alert"></p>
         </form>
       </section>
     </main>
 
-    <main id="appView" class="app-shell" hidden>
-      <header class="app-header">
-        <div class="brand">
-          <span class="logo-container">
-            <img class="app-logo" src="/static/pullora-logo.png" alt="" />
+    <div id="appView" class="psu-app-shell" hidden>
+      <header class="psu-app-header" data-psu-app-header>
+        <div class="psu-app-header__inner">
+          <span class="psu-app-symbol" aria-hidden="true">
+            <img data-psu-app-logo src="/static/pulliku-logo.png" alt="" />
+            <svg data-psu-fallback-symbol><use href="#psu-icon-download"></use></svg>
           </span>
-          <div>
-            <p class="overline">Self-hosted</p>
-            <h1>Pullora</h1>
+          <div class="psu-app-title-stack">
+            <h1 class="psu-app-title">Pulliku</h1>
+            <p class="psu-app-subtitle">Media Download Interface</p>
           </div>
-        </div>
-        <div class="header-actions">
+          <div class="psu-spacer"></div>
           <span id="currentUser" class="current-user"></span>
-          <button id="userMenuButton" class="icon-menu-button" type="button" aria-label="Open menu" aria-expanded="false">
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M12 8h.01"></path>
-              <path d="M12 12h.01"></path>
-              <path d="M12 16h.01"></path>
-            </svg>
+          <button id="userMenuButton" class="psu-avatar-button" type="button" aria-label="Open profile and settings" aria-expanded="false">
+            <span id="avatarInitials">PU</span>
           </button>
         </div>
       </header>
 
-      <section class="dashboard">
-        <aside class="surface-card new-download-card">
-          <div class="section-title">
-            <h2>New Download</h2>
-          </div>
-          <form id="downloadForm" class="stack">
-            <label>
-              URL
-              <input name="url" type="url" placeholder="https://..." required />
-            </label>
-
-            <div id="optionsDisclosure" class="options-disclosure" data-open="false">
-              <button id="optionsToggle" class="options-summary" type="button" aria-expanded="false">
-                <span>
-                  <span class="summary-title">Download options</span>
-                  <span id="optionsSummary" class="summary-chips"></span>
-                </span>
-                <svg viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="m6 9 6 6 6-6"></path>
-                </svg>
-              </button>
-
-              <section id="downloadOptionsPanel" class="download-options-panel" hidden>
-                <div class="options-panel-head">
-                  <h3>Download options</h3>
-                  <button id="optionsReset" class="button text" type="button">Reset</button>
-                </div>
-
-                <div class="segmented" role="group" aria-label="Download type">
-                  <label>
-                    <input type="radio" name="media_type" value="video" checked />
-                    <span>Video</span>
-                  </label>
-                  <label>
-                    <input type="radio" name="media_type" value="audio" />
-                    <span>Audio</span>
-                  </label>
-                </div>
-
-                <div class="settings-grid">
-                  <label data-setting-group="video">
-                    Video Format
-                    <select id="videoFormat" name="video_format">
-                      <option value="auto">Auto</option>
-                      <option value="mp4">MP4</option>
-                      <option value="webm">WebM</option>
-                      <option value="mkv">MKV</option>
-                    </select>
-                  </label>
-                  <label data-setting-group="video">
-                    Video Codec
-                    <select id="videoCodec" name="video_codec">
-                      <option value="auto">Auto</option>
-                      <option value="h264">H.264</option>
-                      <option value="h265">H.265</option>
-                      <option value="vp9">VP9</option>
-                      <option value="av1">AV1</option>
-                    </select>
-                  </label>
-                  <label data-setting-group="video">
-                    Quality
-                    <select name="video_quality">
-                      <option value="auto">Auto</option>
-                      <option value="2160">2160p</option>
-                      <option value="1440">1440p</option>
-                      <option value="1080">1080p</option>
-                      <option value="720">720p</option>
-                      <option value="480">480p</option>
-                      <option value="360">360p</option>
-                    </select>
-                  </label>
-                  <label data-setting-group="audio">
-                    Audio Format
-                    <select id="audioFormat" name="audio_format">
-                      <option value="auto">Auto</option>
-                      <option value="mp3">MP3</option>
-                      <option value="m4a">M4A</option>
-                      <option value="opus">Opus</option>
-                      <option value="flac">FLAC</option>
-                    </select>
-                  </label>
-                  <label data-setting-group="audio">
-                    Bitrate
-                    <select id="audioBitrate" name="audio_bitrate">
-                      <option value="auto">Auto</option>
-                      <option value="320K">320K</option>
-                      <option value="256K">256K</option>
-                      <option value="192K">192K</option>
-                      <option value="128K">128K</option>
-                      <option value="96K">96K</option>
-                    </select>
-                  </label>
-                </div>
-
-                <label class="switch-row">
-                  <span>Allow playlist</span>
-                  <input name="playlist" type="checkbox" />
-                  <span class="switch-track" aria-hidden="true"></span>
-                </label>
-
-                <div class="panel-actions">
-                  <button id="optionsDone" class="button tonal" type="button">Done</button>
-                </div>
-              </section>
+      <main class="psu-desktop-main">
+        <section class="dashboard">
+          <aside class="psu-hero-card new-download-card">
+            <div class="section-title">
+              <div>
+                <p class="eyebrow">New task</p>
+                <h2 class="psu-card-title">New Download</h2>
+              </div>
             </div>
+            <form id="downloadForm" class="psu-form-stack">
+              <label class="psu-field">
+                <span class="psu-label">URL</span>
+                <input class="psu-input" name="url" type="url" placeholder="https://..." required />
+              </label>
 
-            <button class="button primary" type="submit">Add to Queue</button>
-            <p id="downloadError" class="error" role="alert"></p>
-          </form>
-        </aside>
+              <div id="optionsDisclosure" class="options-disclosure" data-open="false">
+                <button id="optionsToggle" class="options-summary" type="button" aria-expanded="false">
+                  <span>
+                    <span class="summary-title">Download options</span>
+                    <span id="optionsSummary" class="psu-chip-group"></span>
+                  </span>
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="m6 9 6 6 6-6"></path>
+                  </svg>
+                </button>
 
-        <section class="surface-card queue-section">
-          <div class="queue-head">
-            <div>
-              <h2>Queue</h2>
-              <div id="queueStats" class="queue-stats"></div>
+                <section id="downloadOptionsPanel" class="download-options-panel" hidden>
+                  <div class="options-panel-head">
+                    <h3>Download options</h3>
+                    <button id="optionsReset" class="psu-button psu-button--text" type="button">Reset</button>
+                  </div>
+
+                  <div class="segmented" role="group" aria-label="Download type">
+                    <label>
+                      <input type="radio" name="media_type" value="video" checked />
+                      <span>Video</span>
+                    </label>
+                    <label>
+                      <input type="radio" name="media_type" value="audio" />
+                      <span>Audio</span>
+                    </label>
+                  </div>
+
+                  <div class="settings-grid">
+                    <label class="psu-field" data-setting-group="video">
+                      <span class="psu-label">Video Format</span>
+                      <select id="videoFormat" class="psu-input" name="video_format">
+                        <option value="auto">Auto</option>
+                        <option value="mp4">MP4</option>
+                        <option value="webm">WebM</option>
+                        <option value="mkv">MKV</option>
+                      </select>
+                    </label>
+                    <label class="psu-field" data-setting-group="video">
+                      <span class="psu-label">Video Codec</span>
+                      <select id="videoCodec" class="psu-input" name="video_codec">
+                        <option value="auto">Auto</option>
+                        <option value="h264">H.264</option>
+                        <option value="h265">H.265</option>
+                        <option value="vp9">VP9</option>
+                        <option value="av1">AV1</option>
+                      </select>
+                    </label>
+                    <label class="psu-field" data-setting-group="video">
+                      <span class="psu-label">Quality</span>
+                      <select class="psu-input" name="video_quality">
+                        <option value="auto">Auto</option>
+                        <option value="2160">2160p</option>
+                        <option value="1440">1440p</option>
+                        <option value="1080">1080p</option>
+                        <option value="720">720p</option>
+                        <option value="480">480p</option>
+                        <option value="360">360p</option>
+                      </select>
+                    </label>
+                    <label class="psu-field" data-setting-group="audio">
+                      <span class="psu-label">Audio Format</span>
+                      <select id="audioFormat" class="psu-input" name="audio_format">
+                        <option value="auto">Auto</option>
+                        <option value="mp3">MP3</option>
+                        <option value="m4a">M4A</option>
+                        <option value="opus">Opus</option>
+                        <option value="flac">FLAC</option>
+                      </select>
+                    </label>
+                    <label class="psu-field" data-setting-group="audio">
+                      <span class="psu-label">Bitrate</span>
+                      <select id="audioBitrate" class="psu-input" name="audio_bitrate">
+                        <option value="auto">Auto</option>
+                        <option value="320K">320K</option>
+                        <option value="256K">256K</option>
+                        <option value="192K">192K</option>
+                        <option value="128K">128K</option>
+                        <option value="96K">96K</option>
+                      </select>
+                    </label>
+                  </div>
+
+                  <label class="switch-row">
+                    <span>Allow playlist</span>
+                    <input name="playlist" type="checkbox" />
+                    <span class="switch-track" aria-hidden="true"></span>
+                  </label>
+
+                  <div class="panel-actions">
+                    <button id="optionsDone" class="psu-button psu-button--tonal" type="button">Done</button>
+                  </div>
+                </section>
+              </div>
+
+              <button class="psu-button psu-button--filled psu-button--full" type="submit">Add to Queue</button>
+              <p id="downloadError" class="psu-field-error" role="alert"></p>
+            </form>
+          </aside>
+
+          <section class="psu-card queue-section">
+            <div class="queue-head">
+              <div>
+                <p class="eyebrow">Workspace</p>
+                <h2 class="psu-card-title">Queue</h2>
+                <div id="queueStats" class="queue-stats psu-chip-group"></div>
+              </div>
+              <button id="refreshButton" class="psu-button psu-button--tonal" type="button">Refresh</button>
             </div>
-            <button id="refreshButton" class="button tonal" type="button">Refresh</button>
-          </div>
-          <div id="downloadList" class="download-list"></div>
+            <div id="downloadList" class="download-list"></div>
+          </section>
         </section>
-      </section>
-    </main>
+      </main>
+    </div>
 
     <aside id="userMenu" class="user-sheet" hidden>
       <div class="sheet-backdrop" data-menu-close></div>
       <section class="sheet-panel" role="dialog" aria-modal="true" aria-labelledby="userMenuTitle">
         <div class="sheet-head">
-          <div class="brand compact">
-            <span class="logo-container small">
-              <img class="app-logo" src="/static/pullora-logo.png" alt="" />
-            </span>
-            <div>
-              <p class="overline">Signed in as</p>
-              <h2 id="userMenuTitle">Pullora</h2>
-            </div>
-          </div>
-          <button id="userMenuClose" class="icon-menu-button" type="button" aria-label="Close menu">
+          <button id="userMenuClose" class="psu-icon-button" type="button" aria-label="Close profile and settings">
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <path d="M6 6l12 12"></path>
               <path d="M18 6 6 18"></path>
             </svg>
           </button>
+          <h2 id="userMenuTitle" class="psu-sheet-title">Pulliku</h2>
+          <span></span>
         </div>
+
+        <div class="psu-account-card">
+          <div id="accountAvatar" class="psu-account-avatar">PU</div>
+          <div>
+            <p id="accountName" class="psu-account-name">Pulliku</p>
+            <p id="accountRole" class="psu-account-id">Local account</p>
+          </div>
+        </div>
+
+        <section class="sheet-section app-identity-card">
+          <span class="psu-logo-frame" aria-hidden="true">
+            <img data-psu-app-logo src="/static/pulliku-logo.png" alt="" />
+            <svg data-psu-fallback-symbol><use href="#psu-icon-download"></use></svg>
+          </span>
+          <div>
+            <h3 class="psu-card-title">Pulliku</h3>
+            <p class="psu-card-text">Media Download Interface</p>
+          </div>
+        </section>
 
         <div class="sheet-section">
           <h3>Appearance</h3>
-          <label>
-            Theme
-            <select id="themeSelect">
-              <option value="lavender">Lavender</option>
-              <option value="mint">Mint</option>
-              <option value="sky">Sky</option>
-              <option value="amber">Amber</option>
-              <option value="graphite">Graphite</option>
-            </select>
-          </label>
-          <label>
-            Mode
-            <select id="modeSelect">
-              <option value="system">System</option>
-              <option value="light">Light</option>
-              <option value="dark">Dark</option>
-            </select>
-          </label>
+          <div id="themeChoices" class="theme-grid" role="group" aria-label="Theme">
+            <button class="psu-chip" type="button" data-theme-choice="lavender">Lavender</button>
+            <button class="psu-chip" type="button" data-theme-choice="mint">Mint</button>
+            <button class="psu-chip" type="button" data-theme-choice="sky">Sky</button>
+            <button class="psu-chip" type="button" data-theme-choice="amber">Amber</button>
+            <button class="psu-chip" type="button" data-theme-choice="rose">Rose</button>
+            <button class="psu-chip" type="button" data-theme-choice="graphite">Graphite</button>
+          </div>
+          <div class="psu-segmented-control" role="group" aria-label="Mode">
+            <button type="button" data-mode-choice="system">System</button>
+            <button type="button" data-mode-choice="light">Light</button>
+            <button type="button" data-mode-choice="dark">Dark</button>
+          </div>
         </div>
 
         <div class="sheet-section">
           <h3>About</h3>
           <div id="aboutInfo" class="about-grid"></div>
-          <button id="copyDebugButton" class="button tonal" type="button">Copy debug details</button>
+          <button id="copyDebugButton" class="psu-button psu-button--tonal" type="button">Copy debug details</button>
         </div>
 
         <div id="adminTools" class="sheet-section" hidden>
           <h3>User Management</h3>
-          <form id="userForm" class="stack compact-form">
-            <input name="username" placeholder="Username" required minlength="3" />
-            <input name="password" type="password" placeholder="Password" required minlength="12" />
+          <form id="userForm" class="psu-form-stack compact-form">
+            <input class="psu-input" name="username" placeholder="Username" required minlength="3" />
+            <input class="psu-input" name="password" type="password" placeholder="Password" required minlength="12" />
             <label class="switch-row">
               <span>Admin</span>
               <input name="is_admin" type="checkbox" />
               <span class="switch-track" aria-hidden="true"></span>
             </label>
-            <button class="button tonal" type="submit">Create user</button>
-            <p id="userError" class="error" role="alert"></p>
+            <button class="psu-button psu-button--tonal" type="submit">Create user</button>
+            <p id="userError" class="psu-field-error" role="alert"></p>
           </form>
           <div id="userList" class="user-list"></div>
         </div>
 
-        <button id="logoutButton" class="button danger" type="button">Sign out</button>
+        <button id="logoutButton" class="psu-button psu-button--danger psu-button--full" type="button">Sign out</button>
       </section>
     </aside>
 
-    <script src="/static/app.js?v=20260626-1"></script>
+    <script src="/static/app.js?v=20260628-1"></script>
   </body>
 </html>

@@ -1,184 +1,180 @@
-# Pullora
+# Pulliku
 
-Self-hosted `yt-dlp` WebUI built for Docker and ZimaOS.
+Media Download Interface
 
-## Notice
+> Pulliku ist ein ruhiges, self-hosted Webinterface fuer Medien-Downloads mit yt-dlp.
 
-This app was created with AI assistance. Feature requests are unlikely to be handled. Bug fixes, maintenance, and other changes may happen irregularly or not at all.
+## Kurzbeschreibung
 
-## Features
+Pulliku ist eine self-hosted Web-App aus der ishiku-Familie. Die App ist fuer private oder kleine eigene Deployments gedacht und folgt dem gemeinsamen Pixel Soft Utility Designsystem.
 
-- Pullora-branded login and dashboard UI
-- Pixel Soft Utility theme system with Lavender, Mint, Sky, Amber, and Graphite
-- System, Light, and Dark appearance modes
-- login page with session cookie authentication
-- first user is created as admin from a Docker secret on first start
-- admins can create users, reset passwords, and delete users
-- hardened login with server-side sessions, CSRF protection, secure cookie options, and rate limiting
-- user-scoped download history: users only see their own queue entries
-- inline download options inside the New Download card
-- download queue for video and audio
-- video options for container, codec, and maximum resolution
-- audio options for format and bitrate
-- optional playlist downloads
-- live status with progress, speed, and ETA
-- file size and download button directly on completed queue entries
-- About/Admin sheet with app version, build commit, build date, public IP, and yt-dlp diagnostics
-- persistent SQLite database in `data/` inside `/media/ZimaOS-HD/AppData/pullora`
-- downloads in `downloads/` inside `/media/ZimaOS-HD/AppData/pullora`
+## Teil der ishiku-Familie
 
-## Start on ZimaOS / Docker
+Pulliku verwendet die gemeinsame ishiku Oberflaeche:
 
-Important: the ZimaOS/CasaOS app UI often cannot run local Docker builds. In that case the imported YAML must not contain `build:` and must point to an already published image, for example `ghcr.io/maroishiku/pullora:latest`.
+- ruhige, abgerundete Pixel-Soft-Utility-Komponenten
+- sechs gemeinsame Themes: Lavender, Mint, Sky, Amber, Rose und Graphite
+- Light, Dark und System Mode
+- einheitlicher AppHeader, Profil-/Einstellungs-Sheets und About/Admin-Bereiche
+- einheitliches First-Run-Setup fuer den ersten Adminaccount
 
-There are two supported Compose files:
+Die App soll sich bewusst wie Teil einer gemeinsamen Suite anfuehlen, nicht wie eine separate Marke mit eigener Designsprache.
 
-- `docker-compose.yml`: standard Docker Compose with a Docker secret.
-- `docker-compose.zimaos-ui.yml`: ZimaOS/CasaOS-friendly import file with a direct bind mount for the secret file.
+## Funktionen
 
-Both files use the published image `ghcr.io/maroishiku/pullora:latest`. The image is built by GitHub Actions after pushing to GitHub.
+- Pulliku-branded Login, First-Run-Setup und Dashboard UI
+- Pixel Soft Utility Designsystem mit lokal ausgelieferten Tokens, Komponenten und Icons
+- System, Light und Dark Appearance Modes
+- erster Adminaccount wird beim ersten Start ueber ein Setup-Secret erstellt
+- Admins koennen User erstellen, Passwoerter zuruecksetzen und User loeschen
+- gehaertete Sessions mit HttpOnly-Cookies, CSRF-Schutz, SameSite und Rate Limiting
+- user-scoped Download-Historie
+- Download-Queue fuer Video und Audio
+- Video-Optionen fuer Container, Codec und maximale Aufloesung
+- Audio-Optionen fuer Format und Bitrate
+- optionale Playlist-Downloads
+- Live-Status mit Fortschritt, Geschwindigkeit und ETA
+- Datei-Groesse und Download-Button direkt an abgeschlossenen Queue-Eintraegen
+- About/Admin-Sheet mit Version, Build, Public IP und yt-dlp-Diagnostik
 
-1. Place the project on ZimaOS:
+## Tech Stack
 
-   ```text
-   /media/ZimaOS-HD/AppData/pullora
-   ```
+- Frontend: statisches HTML, CSS und Vanilla JavaScript
+- Backend: FastAPI / Uvicorn
+- Datenhaltung: SQLite in `/data`
+- Download Engine: yt-dlp, ffmpeg, Deno und yt-dlp-ejs im Docker Image
+- Deployment: Docker / Docker Compose / ZimaOS
 
-2. Configure the password secret:
+## Installation
 
-   If the folders do not exist yet:
+### Docker Compose
 
-   ```bash
-   mkdir -p /media/ZimaOS-HD/AppData/pullora/data
-   mkdir -p /media/ZimaOS-HD/AppData/pullora/downloads
-   mkdir -p /media/ZimaOS-HD/AppData/pullora/secrets
-   ```
-
-   On Windows:
-
-   ```powershell
-   Set-Content -Path .\secrets\admin_password.txt -Value "Use-A-Long-Initial-Key-2026!"
-   ```
-
-   On Linux/macOS:
-
-   ```bash
-   printf '%s\n' 'Use-A-Long-Initial-Key-2026!' > secrets/admin_password.txt
-   ```
-
-   On ZimaOS/Linux:
-
-   ```bash
-   printf '%s\n' 'Use-A-Long-Initial-Key-2026!' > /media/ZimaOS-HD/AppData/pullora/secrets/admin_password.txt
-   ```
-
-3. Start the container from a terminal:
-
-   ```bash
-   cd /media/ZimaOS-HD/AppData/pullora
-   docker compose up -d
-   ```
-
-   If you use the ZimaOS UI instead, import `docker-compose.zimaos-ui.yml`. The image must already have been built by GitHub Actions:
-
-   ```yaml
-   image: ghcr.io/maroishiku/pullora:latest
-   ```
-
-4. Open the WebUI:
-
-   ```text
-   http://<zimaos-ip>:8180
-   ```
-
-5. Initial login:
-
-   ```text
-   Username: admin
-   Password: contents of secrets/admin_password.txt
-   ```
-
-After the first start, the admin user is stored in SQLite. Changing the secret file later does not change existing passwords automatically; use the admin sheet for that.
-
-Passwords must be at least 12 characters, must not contain the username, must not be common, and must use at least three character classes. For HTTPS deployments, set `APP_COOKIE_SECURE=true` so Pullora uses a `__Host-` session cookie and HSTS.
-
-## Docker Compose
-
-The relevant section in [docker-compose.yml](docker-compose.yml) is:
-
-```yaml
-image: ghcr.io/maroishiku/pullora:latest
-environment:
-  FIRST_ADMIN_USERNAME: admin
-  FIRST_ADMIN_PASSWORD_FILE: /run/secrets/first_admin_password
-volumes:
-  - /media/ZimaOS-HD/AppData/pullora/data:/data
-  - /media/ZimaOS-HD/AppData/pullora/downloads:/downloads
-secrets:
-  first_admin_password:
-    file: /media/ZimaOS-HD/AppData/pullora/secrets/admin_password.txt
-ports:
-  - "8180:8080"
-```
-
-The Compose file intentionally uses absolute paths to `/media/ZimaOS-HD/AppData/pullora`. This keeps it unambiguous when ZimaOS/CasaOS imports the YAML or starts it from another working directory.
-
-For the ZimaOS UI, use [docker-compose.zimaos-ui.yml](docker-compose.zimaos-ui.yml). It does not contain a local build step and uses `image:` only. Without a registry image, the ZimaOS UI cannot start the container.
-
-## Build the Image for the ZimaOS UI
-
-### Automatically via GitHub Actions
-
-This project contains a workflow at `.github/workflows/publish-ghcr.yml`. Every push to GitHub builds a multi-arch image for `linux/amd64` and `linux/arm64`.
-
-The image name is:
-
-```text
-ghcr.io/maroishiku/pullora:latest
-```
-
-Use this value in [docker-compose.zimaos-ui.yml](docker-compose.zimaos-ui.yml):
-
-```yaml
-image: ghcr.io/maroishiku/pullora:latest
-```
-
-If the GHCR package is private, ZimaOS cannot pull it without a registry login. The easiest path is to make the package public in GitHub or log Docker in to `ghcr.io` on ZimaOS.
-
-## yt-dlp Dependencies
-
-The Docker image installs `yt-dlp[default,curl-cffi]`. This includes the recommended default yt-dlp dependencies and `curl_cffi` for browser impersonation. It helps with sites that use TLS fingerprinting and otherwise show errors such as `The extractor is attempting impersonation, but no impersonate target is available`.
-
-The image also includes:
-
-- `ffmpeg` and `ffprobe` for merging, conversion, and post-processing
-- `yt-dlp-ejs` through the `default` dependency group
-- `deno` as the JavaScript runtime for yt-dlp-ejs
-- `AtomicParsley` for selected thumbnail and metadata cases
-- `rtmpdump` for older RTMP edge cases
-
-This improves compatibility significantly, but it does not guarantee that every website works at all times. Some sites require cookies, login, PO tokens, regional IPs, or short-term yt-dlp fixes.
-
-### Manually on a Computer with Docker
+Lege die App-Daten auf ZimaOS oder deinem Docker-Host an:
 
 ```bash
-cd /path/to/project
-docker build -t ghcr.io/maroishiku/pullora:latest .
-docker login ghcr.io
-docker push ghcr.io/maroishiku/pullora:latest
+mkdir -p /media/ZimaOS-HD/AppData/pulliku/data
+mkdir -p /media/ZimaOS-HD/AppData/pulliku/downloads
+mkdir -p /media/ZimaOS-HD/AppData/pulliku/secrets
 ```
 
-Then import `docker-compose.zimaos-ui.yml` in ZimaOS and keep `image:` set to exactly that name.
+Erzeuge ein langes Setup-Secret:
 
-If no user exists on first start and the secret is missing or still set to `change-me-before-first-start`, the app exits intentionally with an error.
+```bash
+openssl rand -base64 48 > /media/ZimaOS-HD/AppData/pulliku/secrets/setup_secret.txt
+chmod 600 /media/ZimaOS-HD/AppData/pulliku/secrets/setup_secret.txt
+```
 
-## Local Development
+Starte Pulliku:
+
+```bash
+cd /media/ZimaOS-HD/AppData/pulliku
+docker compose up -d
+```
+
+Die WebUI ist danach erreichbar unter:
+
+```text
+http://<zimaos-ip>:8180
+```
+
+### Erstes Starten
+
+Beim ersten Oeffnen zeigt Pulliku automatisch das Registrierungsfenster fuer den ersten Adminaccount an. Die Registrierung ist nur moeglich, wenn das Setup-Secret korrekt eingegeben wird.
+
+### Adminaccount erstellen
+
+Im Registrierungsfenster werden benoetigt:
+
+- Setup-Secret aus `secrets/setup_secret.txt`
+- Anzeigename
+- Admin-Benutzername
+- optional E-Mail
+- Admin-Passwort und Wiederholung
+
+Das Admin-Passwort darf nicht mit dem Setup-Secret, dem Usernamen oder dem App-Namen uebereinstimmen. Nach erfolgreicher Erstellung des ersten Adminaccounts wird die oeffentliche Registrierung automatisch geschlossen.
+
+## Konfiguration
+
+### Umgebungsvariablen
+
+| Variable | Beschreibung | Standard |
+| --- | --- | --- |
+| `TZ` | Zeitzone fuer Logs und Anzeige | `Europe/Berlin` |
+| `ISHIKU_APP_URL` | Oeffentliche URL der App hinter einem Reverse Proxy | leer |
+| `ISHIKU_BASE_PATH` | Basis-Pfad hinter Reverse Proxy | `/` |
+| `ISHIKU_DATA_DIR` | Persistenter Datenpfad im Container | `/data` |
+| `DOWNLOAD_DIR` | Download-Zielpfad im Container | `/downloads` |
+| `ISHIKU_LOG_LEVEL` | Log-Level | `info` |
+| `ISHIKU_SETUP_SECRET_FILE` | Pfad zum Docker-Secret | `/run/secrets/ishiku_setup_secret` |
+| `ISHIKU_SETUP_SECRET` | Fallback-Secret als ENV, nur wenn kein Secret-File genutzt wird | leer |
+| `APP_COOKIE_SECURE` | Secure Cookies und HSTS fuer HTTPS | `false` |
+| `SESSION_DAYS` | Session-Laufzeit in Tagen | `14` |
+
+### Docker Secrets
+
+Bevorzugt wird ein Docker/Compose Secret als Datei. In `docker-compose.yml` wird dieses Secret nach `/run/secrets/ishiku_setup_secret` gemountet.
+
+Fuer ZimaOS/CasaOS gibt es zusaetzlich `docker-compose.zimaos-ui.yml`, das die Secret-Datei direkt bind-mounted.
+
+### Persistente Daten
+
+Persistente Daten liegen standardmaessig in:
+
+```text
+/media/ZimaOS-HD/AppData/pulliku/data
+```
+
+Downloads liegen standardmaessig in:
+
+```text
+/media/ZimaOS-HD/AppData/pulliku/downloads
+```
+
+Sichere beide Ordner regelmaessig, wenn Pulliku produktiv genutzt wird.
+
+## Sicherheit
+
+- Das Setup-Secret dient nur zur ersten Admin-Registrierung.
+- Das Admin-Passwort darf nicht dem Setup-Secret entsprechen.
+- Passwoerter werden mit PBKDF2-SHA256 gehasht gespeichert, nie im Klartext.
+- Die oeffentliche Registrierung wird nach dem ersten Adminaccount geschlossen.
+- Setup-Secret, `.env`, Datenbanken, Downloads und Logs gehoeren nicht ins Repository.
+- Fuer HTTPS-Deployments sollte `APP_COOKIE_SECURE=true` gesetzt werden, damit Pulliku `__Host-` Session-Cookies und HSTS nutzt.
+
+## Updates und Backup
+
+```bash
+docker compose pull
+docker compose up -d
+```
+
+Vor Updates sollte der persistente Datenordner gesichert werden:
+
+```bash
+tar -czf backup-pulliku-$(date +%Y%m%d).tar.gz data downloads
+```
+
+## Entwicklung
 
 ```bash
 python -m venv .venv
 .\.venv\Scripts\pip install -r requirements.txt
-$env:FIRST_ADMIN_PASSWORD="Use-A-Local-Dev-Key-2026!"
+$env:ISHIKU_SETUP_SECRET="Use-A-Local-Setup-Secret-2026!"
 .\.venv\Scripts\uvicorn app.main:app --reload --host 127.0.0.1 --port 8080
 ```
 
-The WebUI is then available at `http://127.0.0.1:8080`.
+Beim ersten lokalen Oeffnen erstellst du den Adminaccount ueber das Setup-Fenster mit dem gesetzten Setup-Secret.
+
+Codex soll bei Aenderungen das gemeinsame Pixel Soft Utility Designsystem beibehalten und keine app-spezifischen UI-Abweichungen einfuehren.
+
+## Erstellt mit ChatGPT Codex
+
+Dieses Projekt wurde mit Unterstuetzung von ChatGPT Codex erstellt bzw. ueberarbeitet. Codex wurde verwendet, um Code, Struktur, UI-Komponenten und Dokumentation nach den Vorgaben der ishiku / Pixel Soft Utility Standards zu generieren.
+
+Die Verantwortung fuer Betrieb, Pruefung, Sicherheit und Veroeffentlichung liegt beim Repository-Betreiber.
+
+## Status und Lizenz
+
+Status: persoenliches self-hosted Projekt
+
+Lizenz: nicht angegeben

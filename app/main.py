@@ -20,14 +20,16 @@ from urllib.parse import urlparse
 from urllib.request import urlopen
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 
 APP_DIR = Path(__file__).resolve().parent
 STATIC_DIR = APP_DIR / "static"
-DATA_DIR = Path(os.getenv("APP_DATA_DIR", "./data")).resolve()
+APP_ID = "pulliku"
+APP_NAME = "Pulliku"
+DATA_DIR = Path(os.getenv("ISHIKU_DATA_DIR") or os.getenv("APP_DATA_DIR", "./data")).resolve()
 DOWNLOAD_DIR = Path(os.getenv("DOWNLOAD_DIR", "./downloads")).resolve()
 DB_PATH = DATA_DIR / "app.db"
 SESSION_DAYS = int(os.getenv("SESSION_DAYS", "14"))
@@ -37,20 +39,28 @@ if COOKIE_SAMESITE not in {"strict", "lax", "none"}:
     COOKIE_SAMESITE = "strict"
 if COOKIE_SAMESITE == "none" and not COOKIE_SECURE:
     COOKIE_SAMESITE = "lax"
-SESSION_COOKIE_NAME = "__Host-pullora-session" if COOKIE_SECURE else "pullora_session"
-CSRF_COOKIE_NAME = "pullora_csrf"
+SESSION_COOKIE_NAME = "__Host-pulliku-session" if COOKIE_SECURE else "pulliku_session"
+CSRF_COOKIE_NAME = "pulliku_csrf"
+LEGACY_PULLORA_SESSION_COOKIE_NAME = "__Host-pullora-session" if COOKIE_SECURE else "pullora_session"
+LEGACY_PULLORA_CSRF_COOKIE_NAME = "pullora_csrf"
 LEGACY_SESSION_COOKIE_NAME = "session"
 LOGIN_WINDOW_SECONDS = int(os.getenv("APP_LOGIN_RATE_WINDOW_SECONDS", "900"))
 LOGIN_MAX_FAILURES = int(os.getenv("APP_LOGIN_MAX_FAILURES", "5"))
+SETUP_WINDOW_SECONDS = int(os.getenv("APP_SETUP_RATE_WINDOW_SECONDS", "900"))
+SETUP_MAX_FAILURES = int(os.getenv("APP_SETUP_MAX_FAILURES", "8"))
 MIN_PASSWORD_LENGTH = max(12, int(os.getenv("APP_MIN_PASSWORD_LENGTH", "12")))
 APP_VERSION = os.getenv("APP_VERSION", "0.1.0")
 APP_BUILD_SHA = os.getenv("APP_BUILD_SHA", "dev")
 APP_BUILD_DATE = os.getenv("APP_BUILD_DATE", "unknown")
+LOG_LEVEL = os.getenv("ISHIKU_LOG_LEVEL", "info")
+SETUP_SECRET_FILE_ENV = "ISHIKU_SETUP_SECRET_FILE"
+SETUP_SECRET_ENV = "ISHIKU_SETUP_SECRET"
+DEFAULT_SETUP_SECRET_FILE = "/run/secrets/ishiku_setup_secret"
 
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
-app = FastAPI(title="Pullora")
+app = FastAPI(title="Pulliku")
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 stop_worker = threading.Event()
@@ -61,6 +71,8 @@ public_ip_lock = threading.Lock()
 public_ip_cache: dict[str, Any] = {"value": "unavailable", "expires_at": 0.0}
 login_attempts_lock = threading.Lock()
 login_failures: dict[str, list[float]] = {}
+setup_attempts_lock = threading.Lock()
+setup_failures: dict[str, list[float]] = {}
 
 
 class LoginPayload(BaseModel):
@@ -93,6 +105,15 @@ class PasswordPayload(BaseModel):
     password: str = Field(min_length=12, max_length=4096)
 
 
+class SetupRegisterPayload(BaseModel):
+    setup_secret: str = Field(min_length=1, max_length=4096)
+    display_name: str = Field(min_length=1, max_length=120)
+    username: str = Field(min_length=3, max_length=80)
+    email: str = Field(default="", max_length=254)
+    password: str = Field(min_length=12, max_length=4096)
+    password_confirm: str = Field(min_length=12, max_length=4096)
+
+
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -118,6 +139,8 @@ def init_db() -> None:
             CREATE TABLE IF NOT EXISTS users (
               id INTEGER PRIMARY KEY AUTOINCREMENT,
               username TEXT NOT NULL UNIQUE COLLATE NOCASE,
+              display_name TEXT,
+              email TEXT,
               password_hash TEXT NOT NULL,
               is_admin INTEGER NOT NULL DEFAULT 0,
               created_at TEXT NOT NULL
@@ -149,12 +172,26 @@ def init_db() -> None:
               created_at TEXT NOT NULL,
               updated_at TEXT NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS setup_state (
+              key TEXT PRIMARY KEY,
+              value TEXT NOT NULL,
+              updated_at TEXT NOT NULL
+            );
             """
         )
+        ensure_column(conn, "users", "display_name", "TEXT")
+        ensure_column(conn, "users", "email", "TEXT")
         ensure_column(conn, "sessions", "csrf_token_hash", "TEXT")
         ensure_column(conn, "downloads", "file_size", "INTEGER")
         ensure_column(conn, "downloads", "settings_json", "TEXT NOT NULL DEFAULT '{}'")
-    ensure_initial_admin()
+        admin_count = conn.execute("SELECT COUNT(*) FROM users WHERE is_admin = 1").fetchone()[0]
+        setup_completed = conn.execute("SELECT value FROM setup_state WHERE key = 'setup_completed'").fetchone()
+        if admin_count and not setup_completed:
+            conn.execute(
+                "INSERT OR REPLACE INTO setup_state (key, value, updated_at) VALUES ('setup_completed', 'true', ?)",
+                (utc_now(),),
+            )
 
 
 def read_secret(name: str, file_name: str) -> str | None:
@@ -167,27 +204,25 @@ def read_secret(name: str, file_name: str) -> str | None:
     return None
 
 
-def ensure_initial_admin() -> None:
-    with connect() as conn:
-        count = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
-        if count:
-            return
+def read_setup_secret() -> tuple[str | None, str | None]:
+    configured_file = os.getenv(SETUP_SECRET_FILE_ENV)
+    secret_file = Path(configured_file or DEFAULT_SETUP_SECRET_FILE)
+    file_was_explicit = configured_file is not None
 
-        username = os.getenv("FIRST_ADMIN_USERNAME", "admin").strip() or "admin"
-        password = read_secret("FIRST_ADMIN_PASSWORD", "FIRST_ADMIN_PASSWORD_FILE")
-        if not password or password == "change-me-before-first-start":
-            raise RuntimeError(
-                "No initial admin password configured. Set FIRST_ADMIN_PASSWORD_FILE "
-                "or FIRST_ADMIN_PASSWORD before the first start."
-            )
-        password_error = password_strength_error(password, username)
-        if password_error:
-            raise RuntimeError(f"Initial admin password rejected: {password_error}")
+    if secret_file.exists():
+        try:
+            value = secret_file.read_text(encoding="utf-8").strip()
+        except OSError:
+            return None, SETUP_SECRET_FILE_ENV
+        return (value, None) if value else (None, SETUP_SECRET_FILE_ENV)
 
-        conn.execute(
-            "INSERT INTO users (username, password_hash, is_admin, created_at) VALUES (?, ?, 1, ?)",
-            (username, hash_password(password), utc_now()),
-        )
+    if file_was_explicit:
+        return None, SETUP_SECRET_FILE_ENV
+
+    fallback = os.getenv(SETUP_SECRET_ENV)
+    if fallback and fallback.strip():
+        return fallback.strip(), None
+    return None, SETUP_SECRET_ENV
 
 
 def hash_password(password: str) -> str:
@@ -248,6 +283,8 @@ def set_auth_cookies(response: Response, session_token: str, csrf_token: str) ->
 def delete_auth_cookies(response: Response) -> None:
     response.delete_cookie(SESSION_COOKIE_NAME, **cookie_kwargs(http_only=True))
     response.delete_cookie(CSRF_COOKIE_NAME, **cookie_kwargs(http_only=False))
+    response.delete_cookie(LEGACY_PULLORA_SESSION_COOKIE_NAME, **cookie_kwargs(http_only=True))
+    response.delete_cookie(LEGACY_PULLORA_CSRF_COOKIE_NAME, **cookie_kwargs(http_only=False))
     response.delete_cookie(LEGACY_SESSION_COOKIE_NAME, path="/")
 
 
@@ -257,8 +294,8 @@ def password_strength_error(password: str, username: str | None = None) -> str |
     lowered = password.lower()
     if username and username.lower() in lowered:
         return "Password must not contain the username"
-    common = {"password", "admin", "pullora", "changeme", "letmein", "qwerty", "123456"}
-    if lowered in common or any(item in lowered for item in ("password", "123456", "qwerty")):
+    common = {"password", "passwort", "admin", "ishiku", "pulliku", "pullora", "changeme", "letmein", "qwerty", "123456"}
+    if lowered in common or any(item in lowered for item in ("password", "passwort", "123456", "qwerty")):
         return "Password is too common"
     classes = sum(
         [
@@ -279,20 +316,39 @@ def validate_password_strength(password: str, username: str | None = None) -> No
         raise HTTPException(status_code=400, detail=error)
 
 
+def validate_username_value(username: str) -> str:
+    value = username.strip()
+    if not re.fullmatch(r"[A-Za-z0-9_.-]{3,80}", value):
+        raise HTTPException(status_code=400, detail="Use letters, numbers, dots, dashes or underscores")
+    return value
+
+
+def validate_setup_password(payload: SetupRegisterPayload, setup_secret: str) -> None:
+    if payload.password != payload.password_confirm:
+        raise HTTPException(status_code=400, detail="Password confirmation does not match")
+    if hmac.compare_digest(payload.password, setup_secret):
+        raise HTTPException(status_code=400, detail="Admin password must not match the setup secret")
+    lowered = payload.password.lower()
+    forbidden = {payload.username.strip().lower(), APP_ID, APP_NAME.lower()}
+    if lowered in forbidden or any(item and item in lowered for item in forbidden):
+        raise HTTPException(status_code=400, detail="Admin password must not contain app or username values")
+    validate_password_strength(payload.password, payload.username)
+
+
 def client_key(request: Request, username: str) -> str:
     host = request.client.host if request.client else "unknown"
     return f"{host}:{username.strip().lower()[:80]}"
 
 
-def prune_failures(now: float, attempts: list[float]) -> list[float]:
-    return [timestamp for timestamp in attempts if now - timestamp < LOGIN_WINDOW_SECONDS]
+def prune_failures(now: float, attempts: list[float], window_seconds: int = LOGIN_WINDOW_SECONDS) -> list[float]:
+    return [timestamp for timestamp in attempts if now - timestamp < window_seconds]
 
 
 def assert_login_allowed(request: Request, username: str) -> None:
     key = client_key(request, username)
     now = time.time()
     with login_attempts_lock:
-        attempts = prune_failures(now, login_failures.get(key, []))
+        attempts = prune_failures(now, login_failures.get(key, []), LOGIN_WINDOW_SECONDS)
         login_failures[key] = attempts
         if len(attempts) >= LOGIN_MAX_FAILURES:
             raise HTTPException(status_code=429, detail="Too many login attempts. Try again later.")
@@ -302,7 +358,7 @@ def record_login_failure(request: Request, username: str) -> None:
     key = client_key(request, username)
     now = time.time()
     with login_attempts_lock:
-        login_failures[key] = prune_failures(now, login_failures.get(key, [])) + [now]
+        login_failures[key] = prune_failures(now, login_failures.get(key, []), LOGIN_WINDOW_SECONDS) + [now]
 
 
 def clear_login_failures(request: Request, username: str) -> None:
@@ -310,17 +366,80 @@ def clear_login_failures(request: Request, username: str) -> None:
         login_failures.pop(client_key(request, username), None)
 
 
+def setup_key(request: Request) -> str:
+    return request.client.host if request.client else "unknown"
+
+
+def assert_setup_allowed(request: Request) -> None:
+    key = setup_key(request)
+    now = time.time()
+    with setup_attempts_lock:
+        attempts = prune_failures(now, setup_failures.get(key, []), SETUP_WINDOW_SECONDS)
+        setup_failures[key] = attempts
+        if len(attempts) >= SETUP_MAX_FAILURES:
+            raise HTTPException(status_code=429, detail="Too many setup attempts. Try again later.")
+
+
+def record_setup_failure(request: Request) -> None:
+    key = setup_key(request)
+    now = time.time()
+    with setup_attempts_lock:
+        setup_failures[key] = prune_failures(now, setup_failures.get(key, []), SETUP_WINDOW_SECONDS) + [now]
+
+
+def clear_setup_failures(request: Request) -> None:
+    with setup_attempts_lock:
+        setup_failures.pop(setup_key(request), None)
+
+
+def admin_exists(conn: sqlite3.Connection) -> bool:
+    return bool(conn.execute("SELECT 1 FROM users WHERE is_admin = 1 LIMIT 1").fetchone())
+
+
+def setup_completed(conn: sqlite3.Connection) -> bool:
+    row = conn.execute("SELECT value FROM setup_state WHERE key = 'setup_completed'").fetchone()
+    return bool(row and row["value"] == "true")
+
+
+def set_setup_completed(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        "INSERT OR REPLACE INTO setup_state (key, value, updated_at) VALUES ('setup_completed', 'true', ?)",
+        (utc_now(),),
+    )
+
+
+def setup_state_public() -> dict[str, Any]:
+    secret, missing_config = read_setup_secret()
+    with connect() as conn:
+        has_admin = admin_exists(conn)
+        completed = setup_completed(conn)
+    required = not (has_admin and completed)
+    return {
+        "setup_required": required,
+        "setup_completed": bool(has_admin and completed),
+        "setup_configured": bool(secret) and not missing_config,
+        "setup_state": "completed" if has_admin and completed else ("ready" if secret and not missing_config else "unconfigured"),
+        "missing_config": missing_config if required and not secret else None,
+    }
+
+
 def user_public(row: sqlite3.Row) -> dict[str, Any]:
     return {
         "id": row["id"],
         "username": row["username"],
+        "display_name": row["display_name"],
+        "email": row["email"],
         "is_admin": bool(row["is_admin"]),
         "created_at": row["created_at"],
     }
 
 
 def session_token_from_request(request: Request) -> str | None:
-    return request.cookies.get(SESSION_COOKIE_NAME) or request.cookies.get(LEGACY_SESSION_COOKIE_NAME)
+    return (
+        request.cookies.get(SESSION_COOKIE_NAME)
+        or request.cookies.get(LEGACY_PULLORA_SESSION_COOKIE_NAME)
+        or request.cookies.get(LEGACY_SESSION_COOKIE_NAME)
+    )
 
 
 def get_current_user(request: Request) -> dict[str, Any]:
@@ -968,11 +1087,19 @@ def public_ip() -> str:
 
 
 def system_info() -> dict[str, Any]:
+    setup = setup_state_public()
+    db_status = "ok" if DB_PATH.exists() else "uninitialized"
     return {
         "status": "ok",
         "version": APP_VERSION,
         "build_sha": APP_BUILD_SHA,
         "build_date": APP_BUILD_DATE,
+        "app_id": APP_ID,
+        "data_dir": str(DATA_DIR),
+        "download_dir": str(DOWNLOAD_DIR),
+        "database_status": db_status,
+        "setup_state": "completed" if setup["setup_completed"] else ("ready" if setup["setup_configured"] else "unconfigured"),
+        "log_level": LOG_LEVEL,
         "yt_dlp_version": command_version(["yt-dlp", "--version"])
         or package_version("yt-dlp")
         or "unknown",
@@ -1013,9 +1140,100 @@ def index() -> FileResponse:
     return FileResponse(STATIC_DIR / "index.html")
 
 
+@app.get("/setup")
+def setup_page() -> Response:
+    if not setup_state_public()["setup_required"]:
+        return RedirectResponse("/")
+    return FileResponse(STATIC_DIR / "index.html")
+
+
+@app.get("/login")
+def login_page() -> FileResponse:
+    return FileResponse(STATIC_DIR / "index.html")
+
+
+@app.get("/admin")
+def admin_page() -> FileResponse:
+    return FileResponse(STATIC_DIR / "index.html")
+
+
+@app.get("/healthz")
+def healthz() -> dict[str, str]:
+    return {"status": "ok"}
+
+
+@app.get("/readyz")
+def readyz() -> dict[str, Any]:
+    try:
+        with connect() as conn:
+            conn.execute("SELECT 1").fetchone()
+        database_status = "ok"
+    except sqlite3.Error:
+        database_status = "error"
+    status = "ok" if database_status == "ok" and DATA_DIR.is_dir() else "degraded"
+    setup = setup_state_public()
+    return {
+        "status": status,
+        "database": database_status,
+        "setup": setup["setup_state"],
+    }
+
+
 @app.get("/api/health")
 def health(_: dict[str, Any] = Depends(get_current_user)) -> dict[str, Any]:
     return system_info()
+
+
+@app.get("/api/setup/status")
+def setup_status() -> dict[str, Any]:
+    return setup_state_public()
+
+
+@app.post("/api/setup/register")
+def register_first_admin(payload: SetupRegisterPayload, request: Request) -> dict[str, Any]:
+    assert_setup_allowed(request)
+    configured_secret, missing_config = read_setup_secret()
+    if not configured_secret:
+        record_setup_failure(request)
+        raise HTTPException(status_code=503, detail=f"Setup is not configured. Missing {missing_config or SETUP_SECRET_ENV}.")
+    submitted_secret = payload.setup_secret.strip()
+    if not submitted_secret or not hmac.compare_digest(submitted_secret, configured_secret):
+        record_setup_failure(request)
+        raise HTTPException(status_code=403, detail="Setup secret is invalid")
+
+    username = validate_username_value(payload.username)
+    validate_setup_password(payload, configured_secret)
+    display_name = payload.display_name.strip()
+    email = payload.email.strip() or None
+    if email and not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
+        raise HTTPException(status_code=400, detail="Email address is invalid")
+
+    try:
+        with connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            if admin_exists(conn) and setup_completed(conn):
+                conn.rollback()
+                raise HTTPException(status_code=409, detail="Setup is already complete")
+            if admin_exists(conn):
+                set_setup_completed(conn)
+                conn.commit()
+                raise HTTPException(status_code=409, detail="Setup is already complete")
+            cursor = conn.execute(
+                """
+                INSERT INTO users (username, display_name, email, password_hash, is_admin, created_at)
+                VALUES (?, ?, ?, ?, 1, ?)
+                """,
+                (username, display_name, email, hash_password(payload.password), utc_now()),
+            )
+            set_setup_completed(conn)
+            conn.commit()
+            row = conn.execute("SELECT * FROM users WHERE id = ?", (cursor.lastrowid,)).fetchone()
+    except sqlite3.IntegrityError:
+        record_setup_failure(request)
+        raise HTTPException(status_code=409, detail="Username already exists") from None
+
+    clear_setup_failures(request)
+    return {"status": "created", "user": user_public(row), "setup": setup_state_public()}
 
 
 @app.post("/api/login")
@@ -1233,15 +1451,13 @@ def create_user(
     _csrf: None = Depends(require_csrf),
     _: dict[str, Any] = Depends(require_admin),
 ) -> dict[str, Any]:
-    username = payload.username.strip()
-    if not re.fullmatch(r"[A-Za-z0-9_.-]{3,80}", username):
-        raise HTTPException(status_code=400, detail="Use letters, numbers, dots, dashes or underscores")
+    username = validate_username_value(payload.username)
     validate_password_strength(payload.password, username)
     try:
         with connect() as conn:
             cursor = conn.execute(
-                "INSERT INTO users (username, password_hash, is_admin, created_at) VALUES (?, ?, ?, ?)",
-                (username, hash_password(payload.password), int(payload.is_admin), utc_now()),
+                "INSERT INTO users (username, display_name, password_hash, is_admin, created_at) VALUES (?, ?, ?, ?, ?)",
+                (username, username, hash_password(payload.password), int(payload.is_admin), utc_now()),
             )
             row = conn.execute("SELECT * FROM users WHERE id = ?", (cursor.lastrowid,)).fetchone()
             return {"user": user_public(row)}
