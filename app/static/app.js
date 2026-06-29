@@ -199,7 +199,7 @@ function settingsLabel(settings = {}) {
 
 function retentionLabel(item) {
   if (item.is_permanent) return "Permanent";
-  if (item.status === "completed" && item.file_url) {
+  if (item.status === "completed") {
     const days = Number(item.retention_days || 7);
     return days > 0 ? `Auto-delete in ${days} days` : "Auto-delete off";
   }
@@ -406,6 +406,7 @@ function renderDownloads() {
       const title = item.title || item.url;
       const canCancel = ["queued", "running"].includes(item.status);
       const canDelete = item.status !== "running";
+      const canTogglePermanent = item.status === "completed";
       const progress = Math.max(0, Math.min(100, item.progress || 0));
       const size = formatBytes(item.file_size);
       const detail = [settingsLabel(item.settings), size, retentionLabel(item), item.speed, item.eta ? `ETA ${item.eta}` : null, formatDate(item.created_at)]
@@ -418,7 +419,10 @@ function renderDownloads() {
               <div class="download-title">${escapeHtml(title)}</div>
               <div class="meta">${escapeHtml(detail || item.url)}</div>
             </div>
-            <span class="status-chip ${escapeHtml(item.status)}">${escapeHtml(item.status)}</span>
+            <div class="download-badges">
+              <span class="status-chip ${escapeHtml(item.status)}">${escapeHtml(item.status)}</span>
+              ${canTogglePermanent ? `<span class="retention-chip ${item.is_permanent ? "permanent" : ""}">${item.is_permanent ? "Favorite" : "7-day cleanup"}</span>` : ""}
+            </div>
           </div>
           <div class="progress-track"><progress class="progress-bar" value="${progress}" max="100" aria-label="Download progress"></progress></div>
           ${item.error ? `<div class="meta">${escapeHtml(item.error)}</div>` : ""}
@@ -436,8 +440,11 @@ function renderDownloads() {
             }
             ${canCancel ? `<button class="psu-button psu-button--tonal" type="button" data-action="cancel" data-id="${item.id}">Stop</button>` : ""}
             ${
-              item.status === "completed" && item.file_url
-                ? `<button class="psu-button psu-button--tonal" type="button" data-action="permanent" data-id="${item.id}" data-permanent="${item.is_permanent ? "false" : "true"}">${item.is_permanent ? "7 days" : "Permanent"}</button>`
+              canTogglePermanent
+                ? `<button class="psu-button retention-toggle ${item.is_permanent ? "is-permanent" : ""}" type="button" data-action="permanent" data-id="${item.id}" data-permanent="${item.is_permanent ? "false" : "true"}" aria-pressed="${item.is_permanent ? "true" : "false"}" title="${item.is_permanent ? "Use 7-day cleanup again" : "Keep this file permanently"}">
+                    <span aria-hidden="true">${item.is_permanent ? "★" : "☆"}</span>
+                    <span>${item.is_permanent ? "Permanent" : "Favorite"}</span>
+                  </button>`
                 : ""
             }
             ${canDelete ? `<button class="psu-button psu-button--text" type="button" data-action="delete" data-id="${item.id}">Delete file</button>` : ""}
