@@ -1535,7 +1535,7 @@ def completed_download_target(download_id: int, user_id: int) -> Path:
             FROM downloads
             WHERE id = ? AND created_by = ? AND status = 'completed' AND filename IS NOT NULL
             """,
-            (download_id, user["id"]),
+            (download_id, user_id),
         ).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="File not found")

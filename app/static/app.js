@@ -475,6 +475,7 @@ function renderDownloads() {
                         <path d="M5 2h14"></path>
                         <path d="M17 22v-4.17a2 2 0 0 0-.59-1.42L12 12l-4.41 4.41A2 2 0 0 0 7 17.83V22"></path>
                         <path d="M7 2v4.17a2 2 0 0 0 .59 1.42L12 12l4.41-4.41A2 2 0 0 0 17 6.17V2"></path>
+                        ${hasNoExpiration ? `<path class="retention-expiration-slash" d="M4 20 20 4"></path>` : ""}
                       </svg>
                       <span>${escapeHtml(retentionText)}</span>
                     </button>`

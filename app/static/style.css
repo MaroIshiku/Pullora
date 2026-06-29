@@ -461,9 +461,8 @@ svg {
   color: var(--color-on-primary-container);
 }
 
-.retention-pill.has-no-expiration span {
-  text-decoration: line-through;
-  text-decoration-thickness: 2px;
+.retention-expiration-slash {
+  stroke-width: 2.6;
 }
 
 .empty-state {
